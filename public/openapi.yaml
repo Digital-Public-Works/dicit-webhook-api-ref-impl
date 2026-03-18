@@ -1,0 +1,726 @@
+openapi: 3.0.3
+info:
+  title: VMI Webhooks Data Transmission API
+  description: |
+    API specification for partners to receive structured JSON representations
+    of income verification data from the Verify My Income (VMI) platform.
+
+    The partner must build this API endpoint and ensure that data is ingested
+    into the correct case within the eligibility management system.
+  version: "1.0.0"
+  contact:
+    name: VMI Team
+
+servers:
+  - url: http://localhost:9292
+    description: Local reference implementation
+paths:
+  /api/v1/income-report:
+    post:
+      summary: Receive income report
+      description: |
+        Receives an income report as structured JSON data. Partners are expected
+        to build "flexible" parsers that do not fail when encountering new,
+        unrecognized JSON keys.
+      operationId: receiveIncomeReport
+      security:
+        - apiKey: []
+      parameters:
+        - name: X-VMI-Timestamp
+          in: header
+          required: true
+          description: Seconds since the Unix epoch (used to verify the request signature).
+          schema:
+            type: string
+            pattern: '^\d+$'
+            example: "1764709880"
+        - name: X-VMI-Signature
+          in: header
+          required: true
+          description: HMAC-SHA512 signature calculated from `timestamp:body` using the API key.
+          schema:
+            type: string
+            example: "77cdb11cfad51afd5b5d5eb8aa1b7735b1578202e479bf82eb36d38ac32c1f0263761fdc9c962e78a367d7e6bc841c8dbc97dcc5dc384cf0c4e36fe3ea3ec5e7"
+        - name: X-VMI-Confirmation-Code
+          in: header
+          required: true
+          description: Unique confirmation code of the submitted record.
+          schema:
+            type: string
+            example: "CONF0001"
+        - name: X-VMI-API-Key
+          in: header
+          required: true
+          description: Unique secure GUID provided by the partner.
+          schema:
+            type: string
+            example: "abc123_example_key"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IncomeReport'
+            example:
+              report_metadata:
+                confirmation_code: "CONF0001"
+                report_date_range:
+                  start_date: "2025-11-01"
+                  end_date: "2026-02-01"
+                consent_timestamp_utc: "2026-02-01T10:30:00Z"
+              client_information:
+                case_number: "CASE-998877"
+                first_name: "Elena"
+                last_name: "Thompson"
+                date_of_birth: "1992-11-20"
+                additional_jobs_to_report: true
+              employment_records:
+                - employment_type: "W2"
+                  employer_information:
+                    employer_name: "General Hospital Systems"
+                    employer_phone: "312-555-0456"
+                    employer_address:
+                      line1: "710 N Fairbanks Ct"
+                      line2: "Floor 4"
+                      city: "Chicago"
+                      state: "IL"
+                      postal_code: "60611"
+                      country: "United States"
+                  employment_status: "EMPLOYED"
+                  employment_start_date: "2025-12-29"
+                  employment_end_date: null
+                  employee_information:
+                    full_name: "Elena Thompson"
+                    ssn: "XXX-XX-4455"
+                  pay_frequency: "BIWEEKLY"
+                  base_compensation:
+                    rate: 32.50
+                    interval: "HOURLY"
+                  w2_monthly_summaries:
+                    - month: 1
+                      year: "2026"
+                      total_hours: 160.0
+                      number_of_paychecks: 2
+                      gross_income: 5200.00
+                      partial_month: false
+                      partial_month_start: null
+                      partial_month_end: null
+                  w2_payments:
+                    - pay_date: "2026-01-09"
+                      pay_period:
+                        start: "2025-12-29"
+                        end: "2026-01-04"
+                      gross_pay: 2600.00
+                      net_pay: 1950.40
+                      hours_worked: 80.0
+                      base_hours_paid: 80.0
+                      gross_pay_ytd: 2600.00
+                      gross_pay_line_items:
+                        - name: "Regular"
+                          amount: 2600.00
+                      deductions:
+                        - name: "Medical"
+                          type: "PRETAX"
+                          amount: 120.00
+                        - name: "401k"
+                          type: "PRETAX"
+                          amount: 260.00
+                  gig_monthly_summaries: null
+                  gig_payments: null
+                - employment_type: "GIG"
+                  employer_information:
+                    employer_name: "DoorDash"
+                    employer_phone: null
+                    employer_address:
+                      line1: "303 2nd St"
+                      line2: "South Tower"
+                      city: "San Francisco"
+                      state: "CA"
+                      postal_code: "94107"
+                      country: "United States"
+                  employment_status: "ACTIVE"
+                  employment_start_date: "2025-05-20"
+                  employment_end_date: null
+                  employee_information:
+                    full_name: "Elena Thompson"
+                    ssn: "XXX-XX-4455"
+                  pay_frequency: "VARIABLE"
+                  base_compensation: null
+                  gig_monthly_summaries:
+                    - month: 12
+                      year: "2025"
+                      total_hours: 128.50
+                      gross_earnings: 1336.45
+                      mileage_expenses:
+                        - rate: 70.0
+                          miles: 942
+                    - month: 1
+                      year: "2026"
+                      total_hours: 45.20
+                      gross_earnings: 620.75
+                      mileage_expenses:
+                        - rate: 72.5
+                          miles: 310.4
+                  gig_payments:
+                    - pay_date: "2026-01-26"
+                      amount: 340.25
+                    - pay_date: "2026-01-19"
+                      amount: 280.50
+                  w2_monthly_summaries: null
+                  w2_payments: null
+      responses:
+        '200':
+          description: Income report received successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: "success"
+                message: "Income report received successfully."
+                confirmation_code: "CONF0001"
+        '400':
+          description: Malformed request body or schema validation failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error_code: "VALIDATION_ERROR"
+                message: "The request was well-formed but contains errors."
+                errors:
+                  - field: "gross_pay"
+                    reason: "Value must be a positive decimal."
+                  - field: "case_number"
+                    reason: "This field is required."
+        '401':
+          description: Authentication or signature verification failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error_code: "AUTHENTICATION_ERROR"
+                message: "Invalid API key."
+        '413':
+          description: Content-Length exceeds partner server size limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable entity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate of requests exceeding partner server limits.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: System error during processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Partner server temporarily unavailable or undergoing maintenance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Gateway timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-VMI-API-Key
+      description: Unique secure GUID provided by the partner.
+
+  schemas:
+    IncomeReport:
+      type: object
+      required:
+        - report_metadata
+        - client_information
+        - employment_records
+      properties:
+        report_metadata:
+          $ref: '#/components/schemas/ReportMetadata'
+        client_information:
+          $ref: '#/components/schemas/ClientInformation'
+        employment_records:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmploymentRecord'
+
+    ReportMetadata:
+      type: object
+      required:
+        - confirmation_code
+        - report_date_range
+        - consent_timestamp_utc
+      properties:
+        confirmation_code:
+          type: string
+          description: Unique confirmation code of the submitted record.
+          example: "CONF0001"
+        report_date_range:
+          type: object
+          required:
+            - start_date
+            - end_date
+          properties:
+            start_date:
+              type: string
+              format: date
+              description: Earliest date of review period (YYYY-MM-DD).
+              example: "2025-11-01"
+            end_date:
+              type: string
+              format: date
+              description: Last date of review period (YYYY-MM-DD).
+              example: "2026-02-01"
+        consent_timestamp_utc:
+          type: string
+          format: date-time
+          description: Date and time when client provided legal consent (YYYY-MM-DDTHH:MM:SSZ).
+          example: "2026-02-01T10:30:00Z"
+
+    ClientInformation:
+      type: object
+      description: |
+        Contains unique identifying information to link the report to the correct
+        record in the partner's eligibility database. Fields (e.g. case_number,
+        last_name) are agreed upon with each partner.
+      additionalProperties: true
+      example:
+        case_number: "CASE-998877"
+        first_name: "Elena"
+        last_name: "Thompson"
+
+    EmploymentRecord:
+      type: object
+      required:
+        - employment_type
+        - employer_information
+        - employee_information
+        - pay_frequency
+      properties:
+        employment_type:
+          type: string
+          enum: [W2, GIG]
+          description: Type of employment.
+        employer_information:
+          $ref: '#/components/schemas/EmployerInformation'
+        employment_status:
+          type: string
+          nullable: true
+          enum: [EMPLOYED, ACTIVE, INACTIVE, TERMINATED]
+          description: Current employment status.
+        employment_start_date:
+          type: string
+          format: date
+          nullable: true
+          description: Start date of employment (YYYY-MM-DD).
+        employment_end_date:
+          type: string
+          format: date
+          nullable: true
+          description: End date of employment. Null if still employed.
+        employee_information:
+          $ref: '#/components/schemas/EmployeeInformation'
+        pay_frequency:
+          type: string
+          enum: [ANNUALLY, BIWEEKLY, DAILY, HOURLY, MONTHLY, QUARTERLY, SEMIMONTHLY, SEMIWEEKLY, VARIABLE, WEEKLY]
+          description: How often the employee is paid.
+        base_compensation:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/BaseCompensation'
+          description: Base compensation details. Null if unavailable.
+        w2_monthly_summaries:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/W2MonthlySummary'
+          description: W2 monthly summaries. Present when employment_type is W2, otherwise null.
+        gig_monthly_summaries:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/GigMonthlySummary'
+          description: Gig monthly summaries. Present when employment_type is GIG, otherwise null.
+        w2_payments:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/W2Payment'
+          description: W2 payment records. Present when employment_type is W2, otherwise null.
+        gig_payments:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/GigPayment'
+          description: Gig payment records. Present when employment_type is GIG, otherwise null.
+
+    EmployerInformation:
+      type: object
+      required:
+        - employer_name
+      properties:
+        employer_name:
+          type: string
+          description: Name of the employer.
+          example: "General Hospital Systems"
+        employer_phone:
+          type: string
+          nullable: true
+          description: Employer phone number.
+          example: "312-555-0456"
+        employer_address:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Address'
+
+    EmployeeInformation:
+      type: object
+      properties:
+        full_name:
+          type: string
+          nullable: true
+          description: Full name of client as in the payroll system.
+          example: "Elena Thompson"
+        ssn:
+          type: string
+          nullable: true
+          pattern: '^XXX-XX-\d{4}$'
+          description: "Last four digits of client SSN. Format: XXX-XX-1234"
+          example: "XXX-XX-4455"
+
+    BaseCompensation:
+      type: object
+      properties:
+        rate:
+          type: number
+          format: double
+          nullable: true
+          description: Wages in dollars.
+          example: 32.50
+        interval:
+          type: string
+          nullable: true
+          enum: [HOURLY, DAILY, WEEKLY, BIWEEKLY, SEMIMONTHLY, MONTHLY, ANNUAL, SALARY]
+          description: Pay interval for the base rate.
+
+    Address:
+      type: object
+      properties:
+        line1:
+          type: string
+          nullable: true
+          description: Line one of address.
+          example: "710 N Fairbanks Ct"
+        line2:
+          type: string
+          nullable: true
+          description: Line two of address.
+          example: "Floor 4"
+        city:
+          type: string
+          nullable: true
+          description: City of address.
+          example: "Chicago"
+        state:
+          type: string
+          nullable: true
+          description: State or territory.
+          example: "IL"
+        postal_code:
+          type: string
+          nullable: true
+          description: Postal code.
+          example: "60611"
+        country:
+          type: string
+          nullable: true
+          description: "Country of address. Defaults to 'USA'."
+          example: "United States"
+
+    W2MonthlySummary:
+      type: object
+      required:
+        - month
+        - year
+        - number_of_paychecks
+        - gross_income
+        - partial_month
+      properties:
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Month number (1-12).
+          example: 1
+        year:
+          type: string
+          pattern: '^\d{4}$'
+          description: 4-digit year in YYYY format.
+          example: "2026"
+        total_hours:
+          type: number
+          format: double
+          nullable: true
+          description: Total hours for the month as reported by payroll source.
+          example: 160.0
+        number_of_paychecks:
+          type: integer
+          description: Number of times paid in the month within the 90-day reporting window.
+          example: 2
+        gross_income:
+          type: number
+          format: double
+          description: Sum of incoming payment within the 90-day reporting window.
+          example: 5200.00
+        partial_month:
+          type: boolean
+          description: True if this month represents less than a full month.
+          example: false
+        partial_month_start:
+          type: string
+          format: date
+          nullable: true
+          description: Start of partial month period. Null if partial_month is false.
+        partial_month_end:
+          type: string
+          format: date
+          nullable: true
+          description: End of partial month period. Null if partial_month is false.
+
+    GigMonthlySummary:
+      type: object
+      required:
+        - month
+        - year
+      properties:
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Month number (1-12).
+          example: 12
+        year:
+          type: string
+          pattern: '^\d{4}$'
+          description: 4-digit year in YYYY format.
+          example: "2025"
+        total_hours:
+          type: number
+          format: double
+          nullable: true
+          description: Total hours reported for the month.
+          example: 128.50
+        gross_earnings:
+          type: number
+          format: double
+          nullable: true
+          description: Sum of income payments for the month.
+          example: 1336.45
+        mileage_expenses:
+          type: array
+          nullable: true
+          description: |
+            Mileage expenses for certain GIG employments. Verified mileage
+            expenses can be calculated to cover costs including gas, car
+            payments or leasing fees, car insurance, repairs, and maintenance.
+          items:
+            $ref: '#/components/schemas/MileageExpense'
+
+    MileageExpense:
+      type: object
+      properties:
+        rate:
+          type: number
+          format: double
+          nullable: true
+          description: IRS-defined deduction rate per mile in cents.
+          example: 70.0
+        miles:
+          type: number
+          format: double
+          nullable: true
+          description: Distance in miles.
+          example: 942
+
+    W2Payment:
+      type: object
+      required:
+        - gross_pay
+        - net_pay
+        - gross_pay_ytd
+        - gross_pay_line_items
+        - deductions
+      properties:
+        pay_date:
+          type: string
+          format: date
+          nullable: true
+          description: Date of payment (YYYY-MM-DD).
+          example: "2026-01-09"
+        pay_period:
+          type: object
+          nullable: true
+          properties:
+            start:
+              type: string
+              format: date
+              nullable: true
+              description: Start of pay period.
+              example: "2025-12-29"
+            end:
+              type: string
+              format: date
+              nullable: true
+              description: End of pay period.
+              example: "2026-01-04"
+        gross_pay:
+          type: number
+          format: double
+          description: "Gross pay amount. If not on pay stub, sent as 0."
+          example: 2600.00
+        net_pay:
+          type: number
+          format: double
+          description: "Net pay amount. If not on pay stub, sent as 0."
+          example: 1950.40
+        hours_worked:
+          type: number
+          format: double
+          nullable: true
+          description: Hours worked in the pay period.
+          example: 80.0
+        base_hours_paid:
+          type: number
+          format: double
+          nullable: true
+          description: Base hours paid in the pay period.
+          example: 80.0
+        gross_pay_ytd:
+          type: number
+          format: double
+          description: "Gross pay year-to-date. A null value will be sent as 0."
+          example: 2600.00
+        gross_pay_line_items:
+          type: array
+          description: Itemized gross pay components.
+          items:
+            $ref: '#/components/schemas/GrossPayLineItem'
+        deductions:
+          type: array
+          description: Itemized deductions.
+          items:
+            $ref: '#/components/schemas/Deduction'
+
+    GrossPayLineItem:
+      type: object
+      required:
+        - amount
+      properties:
+        name:
+          type: string
+          nullable: true
+          description: Name of the earnings line item.
+          example: "Regular"
+        amount:
+          type: number
+          format: double
+          description: Dollar amount.
+          example: 2600.00
+
+    Deduction:
+      type: object
+      required:
+        - type
+        - amount
+      properties:
+        name:
+          type: string
+          nullable: true
+          description: Name of the deduction.
+          example: "Medical"
+        type:
+          type: string
+          enum: [PRETAX, POSTTAX, UNKNOWN]
+          description: Tax classification of the deduction.
+          example: "PRETAX"
+        amount:
+          type: number
+          format: double
+          description: Dollar amount of the deduction.
+          example: 120.00
+
+    GigPayment:
+      type: object
+      required:
+        - pay_date
+        - amount
+      properties:
+        pay_date:
+          type: string
+          format: date
+          description: Date of payment (YYYY-MM-DD).
+          example: "2026-01-26"
+        amount:
+          type: number
+          format: double
+          description: Payment amount in dollars.
+          example: 340.25
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "success"
+        message:
+          type: string
+          example: "Income report received successfully."
+        confirmation_code:
+          type: string
+          example: "CONF0001"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error_code:
+          type: string
+          description: Machine-readable error category.
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          description: Human-readable error description.
+          example: "The request was well-formed but contains errors."
+        errors:
+          type: array
+          description: Detailed field-level errors (when applicable).
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                description: JSON path of the field with the error.
+                example: "gross_pay"
+              reason:
+                type: string
+                description: Description of what is wrong.
+                example: "Value must be a positive decimal."
