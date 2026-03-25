@@ -23,6 +23,22 @@ bundle exec rackup -p 9292 -o 0.0.0.0
 
 The server starts on port 9292 by default. Open http://localhost:9292 for the Swagger UI.
 
+### Running with Docker
+
+```bash
+docker build -t vmi-webhook-api .
+docker run --rm -p 9292:9292 vmi-webhook-api
+```
+
+To pass configuration:
+
+```bash
+docker run --rm -p 9292:9292 \
+  -e VMI_API_KEY=my-secure-guid \
+  -e VERIFY_SIGNATURE=true \
+  vmi-webhook-api
+```
+
 ## Available Endpoints
 
 | Path | Method | Description |
@@ -79,15 +95,17 @@ This matches the signing logic in the VMI platform (`JsonApiSignature`).
 The server validates the full payload structure per the spec:
 
 - **Report Metadata** — `confirmation_code`, `report_date_range` (start/end dates), `consent_timestamp_utc`
-- **Client Information** — must be a non-empty object (fields vary by partner)
+- **Client Information** — must be an object (fields vary by partner)
 - **Employment Records** — array of W2 or GIG records, each validated for:
-  - `employment_type` enum (W2, GIG)
-  - `employer_information` with required `employer_name`
+  - `employment_type` enum (`W2`, `GIG`)
+  - `employment_status` enum (`EMPLOYED`, `ACTIVE`, `INACTIVE`, `TERMINATED`)
+  - `employer_information` with required `employer_name` and optional `employer_address` (`line1`, `line2`, `city`, `state`, `postal_code`, `country`)
   - `employee_information` with optional SSN format validation (`XXX-XX-1234`)
-  - `pay_frequency` enum
-  - `base_compensation` (rate + interval enum)
-  - **W2**: `w2_monthly_summaries` (month 1-12, year, paychecks, gross income, partial month fields), `w2_payments` (gross/net pay, YTD, line items, deductions with PRETAX/POSTTAX/UNKNOWN type)
-  - **GIG**: `gig_monthly_summaries` (month 1-12, year, hours, earnings, mileage expenses), `gig_payments` (pay date + amount)
+  - `employment_start_date` and `employment_end_date` (nullable date fields)
+  - `pay_frequency` enum (`ANNUALLY`, `BIWEEKLY`, `DAILY`, `HOURLY`, `MONTHLY`, `QUARTERLY`, `SEMIMONTHLY`, `WEEKLY`)
+  - `base_compensation` (nullable) — `rate` + `interval` enum (`HOURLY`, `DAILY`, `WEEKLY`, `BIWEEKLY`, `SEMIMONTHLY`, `MONTHLY`, `ANNUAL`, `SALARY`)
+  - **W2** (nullable): `w2_monthly_summaries` (month 1-12, year, `number_of_paychecks`, `gross_income`, partial month fields), `w2_payments` (gross/net pay, YTD, line items, deductions with `PRETAX`/`POSTTAX`/`UNKNOWN` type)
+  - **GIG** (nullable): `gig_monthly_summaries` (month 1-12, year, hours, `gross_earnings`, mileage expenses), `gig_payments` (pay date + amount)
 
 Date fields must be `YYYY-MM-DD`, datetimes must be `YYYY-MM-DDTHH:MM:SSZ`.
 
@@ -96,9 +114,10 @@ Date fields must be `YYYY-MM-DD`, datetimes must be `YYYY-MM-DDTHH:MM:SSZ`.
 | Code | Meaning |
 |------|---------|
 | 200 | Payload accepted and valid |
-| 400 | JSON parse error or validation failure — returns field-level error details |
+| 400 | JSON parse error (`PARSE_ERROR`) or validation failure (`VALIDATION_ERROR`) — returns field-level error details |
 | 401 | Missing headers, bad API key, or signature verification failure |
 | 404 | Unknown endpoint |
+| 405 | Method not allowed (only POST is accepted for the income report endpoint) |
 
 Error responses follow the spec format:
 
@@ -138,7 +157,11 @@ Since signature verification is off by default, you can also test without comput
 ## Project Structure
 
 ```
+├── .dockerignore                    # Files excluded from Docker build
+├── .ruby-version                    # Ruby version (3.4.5)
+├── Dockerfile                       # Container image definition
 ├── Gemfile                          # Dependencies (sinatra, puma, rackup)
+├── Gemfile.lock                     # Locked dependency versions
 ├── config.ru                        # Rack entry point
 ├── app.rb                           # Sinatra application (routes, header validation)
 ├── lib/
