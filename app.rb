@@ -43,7 +43,7 @@ class WebhookAPIReference < Sinatra::Base
 
     # ensure api key matches configured key
     unless request.env["HTTP_X_VMI_API_KEY"] == settings.api_key
-      logger.warn "API key mismatch: received='#{request.env['HTTP_X_VMI_API_KEY']}' expected='#{settings.api_key}'"
+      logger.warn "API key mismatch: received key does not match configured VMI_API_KEY"
       halt 401, error_response("AUTHENTICATION_ERROR", "Invalid API key.")
     end
 
@@ -55,7 +55,7 @@ class WebhookAPIReference < Sinatra::Base
       signature = request.env["HTTP_X_VMI_SIGNATURE"]
       expected = SignatureVerifier.generate(body, timestamp, settings.api_key)
       unless SignatureVerifier.verify(body, timestamp, signature, settings.api_key)
-        logger.warn "Signature mismatch: received='#{signature}' expected='#{expected}'"
+        logger.warn "Signature verification failed for timestamp=#{timestamp}"
         halt 401, error_response("AUTHENTICATION_ERROR", "Signature verification failed.")
       end
     end
