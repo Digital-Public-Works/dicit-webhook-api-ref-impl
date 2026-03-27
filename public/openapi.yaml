@@ -294,7 +294,8 @@ components:
         consent_timestamp_utc:
           type: string
           format: date-time
-          description: Date and time when client provided legal consent (YYYY-MM-DDTHH:MM:SSZ).
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+          description: Date and time when client provided legal consent (YYYY-MM-DDTHH:MM:SSZ). Must not include fractional seconds.
           example: "2026-02-01T10:30:00Z"
 
     ClientInformation:
@@ -315,7 +316,6 @@ components:
         - employment_type
         - employer_information
         - employee_information
-        - pay_frequency
       properties:
         employment_type:
           type: string
@@ -342,8 +342,9 @@ components:
           $ref: '#/components/schemas/EmployeeInformation'
         pay_frequency:
           type: string
+          nullable: true
           enum: [ANNUALLY, BIWEEKLY, DAILY, HOURLY, MONTHLY, QUARTERLY, SEMIMONTHLY, SEMIWEEKLY, VARIABLE, WEEKLY]
-          description: How often the employee is paid.
+          description: How often the employee is paid. Null if the payroll aggregator does not report a pay frequency.
         base_compensation:
           nullable: true
           allOf:
