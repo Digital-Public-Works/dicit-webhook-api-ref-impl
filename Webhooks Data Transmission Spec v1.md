@@ -5,6 +5,7 @@
 | 2/9/2026 | Initial document created |
 | 3/10/2026 | Update partial_month documentation and add partial_month_start and partial_month_end |
 | 3/12/2026 | Update month to be integer instead of 3 letter code |
+| 3/27/2026 | Make pay_frequency nullable, fix sample payload pay_period fields, add deductions nullable, clarify partial_month fields |
 
 # Introduction
 
@@ -100,7 +101,7 @@ The request body contains the income data. This payload is formatted as a JSON o
     |   ├ `full_name` | String | Yes | Full name of client as in the payroll system. |
     |   └ `ssn` | String | Yes | Last four digits of client SSN as reported by payroll system. 
     Format: `XXX-XX-1234` |
-    | `pay_frequency` | Enum | No | Must be: `ANNUALLY`, `BIWEEKLY`, `DAILY`, `HOURLY`, `MONTHLY`, `QUARTERLY`, `SEMIMONTHLY`, `SEMIWEEKLY`, `VARIABLE`, `WEEKLY` |
+    | `pay_frequency` | Enum | Yes | Must be: `ANNUALLY`, `BIWEEKLY`, `DAILY`, `HOURLY`, `MONTHLY`, `QUARTERLY`, `SEMIMONTHLY`, `SEMIWEEKLY`, `VARIABLE`, `WEEKLY`. Null if the payroll aggregator does not report a pay frequency. |
     | `base_compensation` | Object | Yes | If no information is available, this value is `null`. |
     |   ├ `rate` | Decimal | Yes | Wages in dollars |
     |   └ `interval` | Enum | Yes | Must be: `HOURLY`, `DAILY`, `WEEKLY`, `BIWEEKLY`, `SEMIMONTHLY`, `MONTHLY`, `ANNUAL` , `SALARY` |
@@ -131,8 +132,8 @@ The request body contains the income data. This payload is formatted as a JSON o
     | `number_of_paychecks` | Integer | No | Number of times paid in the month within the 90-day reporting window. |
     | `gross_income` | Decimal | No | Sum of incoming payment within the 90-day reporting window. |
     | `partial_month` | Boolean | No | ‘true’ if this month represents less than a full month |
-    | `partial_month_start` | Date | Yes | Start of partial month period. Will be null if `partial_month` is false |
-    | `partial_month_end` | Date | Yes | End of partial month period. Will be null if `partial_month` is false |
+    | `partial_month_start` | Date | Yes | Start of partial month period. Will be `null` if `partial_month` is `false`. When `partial_month` is `true`, contains the start date of the partial period. |
+    | `partial_month_end` | Date | Yes | End of partial month period. Will be `null` if `partial_month` is `false`. When `partial_month` is `true`, contains the end date of the partial period. |
 - **Gig Monthly Summary (object)**
     
     
@@ -165,7 +166,7 @@ The request body contains the income data. This payload is formatted as a JSON o
     | `gross_pay_line_items` | Array | No | Contains zero or more items listed on as part of the gross pay. |
     |   ├ `name` | String | Yes |  |
     |  └ `amount` | Decimal | No |  |
-    |  `deductions` | Array |  | Contains zero or more items listed on as deductions. |
+    |  `deductions` | Array | No | Contains zero or more items listed on as deductions. |
     |   ├ `name` | String | Yes |  |
     |   ├ `type` | Enum | No | Must be: `PRETAX` ,`POSTTAX` , or `UNKNOWN`  |
     |   └ `amount` | Decimal | No |  |
@@ -239,7 +240,10 @@ Content-Length: 5648
           "year": "2026",
           "total_hours": 160.0,
           "number_of_paychecks": 2,
-          "gross_income": 5200.00
+          "gross_income": 5200.00,
+          "partial_month": false,
+          "partial_month_start": null,
+          "partial_month_end": null
         }
       ],
       "gig_payments": null,
@@ -247,8 +251,8 @@ Content-Length: 5648
         {
           "pay_date": "2026-01-09",
           "pay_period": {
-            "start_date": "2025-12-29",
-            "end_date": "2026-01-04"
+            "start": "2025-12-29",
+            "end": "2026-01-04"
           },
           "gross_pay": 2600.00,
           "net_pay": 1950.40,
@@ -266,8 +270,8 @@ Content-Length: 5648
         {
           "pay_date": "2026-01-23",
           "pay_period": {
-            "start_date": "2026-01-05",
-            "end_date": "2026-01-18"
+            "start": "2026-01-05",
+            "end": "2026-01-18"
           },
           "gross_pay": 2600.00,
           "net_pay": 1950.40,
