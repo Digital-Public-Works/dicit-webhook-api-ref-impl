@@ -65,7 +65,7 @@ Environment variables:
 Example with signature verification enabled:
 
 ```bash
-VMI_API_KEY=my-secure-guid VERIFY_SIGNATURE=true bundle exec rackup -p 4567
+VMI_API_KEY=my-secure-guid VERIFY_SIGNATURE=true bundle exec rackup -p 9292
 ```
 
 ## Authentication
@@ -153,6 +153,28 @@ curl -X POST http://localhost:9292/api/v1/income-report \
 ```
 
 Since signature verification is off by default, you can also test without computing a signature — just pass any non-empty value for `X-VMI-Signature`.
+
+## Integration Tests
+
+The VMI Rails application (`dicit`) includes integration tests that send real HTTP requests to this reference server. These tests exercise the full webhook delivery pipeline — signing, header construction, payload serialization, and response handling — against a running instance of this server with signature verification enabled.
+
+To run the integration tests:
+
+1. Start this reference server with signature verification enabled:
+
+```bash
+cd /path/to/dicit-webhook-api-ref-impl
+VMI_API_KEY=my-secure-guid VERIFY_SIGNATURE=true bundle exec rackup -p 9292
+```
+
+2. In a separate terminal, run the integration spec from the Rails app:
+
+```bash
+cd /path/to/dicit/app
+INTEGRATION_RUN_TESTS=1 bundle exec rspec spec/services/transmitters/webhook_transmitter_integration_spec.rb
+```
+
+> **Note:** The integration tests are gated behind the `INTEGRATION_RUN_TESTS` environment variable so they don't run during normal CI — they require this server to be running locally.
 
 ## Project Structure
 

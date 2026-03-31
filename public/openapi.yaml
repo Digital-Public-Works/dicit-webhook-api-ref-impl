@@ -294,8 +294,7 @@ components:
         consent_timestamp_utc:
           type: string
           format: date-time
-          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
-          description: Date and time when client provided legal consent (YYYY-MM-DDTHH:MM:SSZ). Must not include fractional seconds.
+          description: Date and time when client provided legal consent (YYYY-MM-DDTHH:MM:SSZ).
           example: "2026-02-01T10:30:00Z"
 
     ClientInformation:
