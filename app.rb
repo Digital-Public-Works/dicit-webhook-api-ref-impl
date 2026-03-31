@@ -10,6 +10,7 @@ class WebhookAPIReference < Sinatra::Base
     set :api_key, ENV.fetch("VMI_API_KEY", "abc123_example_key")
     # feature flag for Sinatra - this will generally be 'false' in dev evironment
     set :verify_signature, ENV.fetch("VERIFY_SIGNATURE", "false") == "true"
+    set :logging, true
   end
 
   # basic swagger config path
@@ -21,6 +22,14 @@ class WebhookAPIReference < Sinatra::Base
   before "/api/*" do
     content_type :json
     @raw_body = request.body.read rescue ""
+
+    logger.info "=== Incoming Request ==="
+    logger.info "#{request.request_method} #{request.path_info} from #{request.ip}"
+    logger.info "Headers: X-VMI-API-Key=#{request.env['HTTP_X_VMI_API_KEY'] ? '[PRESENT]' : '[MISSING]'} " \
+                "X-VMI-Timestamp=#{request.env['HTTP_X_VMI_TIMESTAMP'] || '[MISSING]'} " \
+                "X-VMI-Signature=#{request.env['HTTP_X_VMI_SIGNATURE'] ? '[PRESENT]' : '[MISSING]'} " \
+                "X-VMI-Confirmation-Code=#{request.env['HTTP_X_VMI_CONFIRMATION_CODE'] || '[MISSING]'} " \
+                "Content-Type=#{request.content_type || '[MISSING]'}"
   end
 
   # reference implementation of the endpoint that will need to be created
@@ -34,6 +43,7 @@ class WebhookAPIReference < Sinatra::Base
 
     # ensure api key matches configured key
     unless request.env["HTTP_X_VMI_API_KEY"] == settings.api_key
+      logger.warn "API key mismatch: received key does not match configured VMI_API_KEY"
       halt 401, error_response("AUTHENTICATION_ERROR", "Invalid API key.")
     end
 
@@ -43,7 +53,9 @@ class WebhookAPIReference < Sinatra::Base
     if settings.verify_signature
       timestamp = request.env["HTTP_X_VMI_TIMESTAMP"]
       signature = request.env["HTTP_X_VMI_SIGNATURE"]
+      expected = SignatureVerifier.generate(body, timestamp, settings.api_key)
       unless SignatureVerifier.verify(body, timestamp, signature, settings.api_key)
+        logger.warn "Signature verification failed for timestamp=#{timestamp}"
         halt 401, error_response("AUTHENTICATION_ERROR", "Signature verification failed.")
       end
     end
@@ -63,17 +75,28 @@ class WebhookAPIReference < Sinatra::Base
 
     # exit out if the incoming payload is not in the expected structure
     unless validation_errors.empty?
+      logger.warn "Validation failed: #{validation_errors.map { |e| "#{e[:field]}: #{e[:reason]}" }.join(', ')}"
       halt 400, error_response("VALIDATION_ERROR", "The request was well-formed but contains errors.", validation_errors)
     end
 
     # TODO: Insert your processing of this payload here
+
+    confirmation_code = payload.dig("report_metadata", "confirmation_code")
+    record_count = payload.dig("employment_records")&.size || 0
+    date_range_start = payload.dig("report_metadata", "report_date_range", "start_date")
+    date_range_end = payload.dig("report_metadata", "report_date_range", "end_date")
+    consent_ts = payload.dig("report_metadata", "consent_timestamp_utc")
+    logger.info "Request accepted: confirmation_code=#{confirmation_code} " \
+                "employment_records=#{record_count} " \
+                "date_range=#{date_range_start}..#{date_range_end} " \
+                "consent_timestamp=#{consent_ts}"
 
     # success! Let VMI know that it all worked
     status 200
     {
       status: "success",
       message: "Income report received successfully.",
-      confirmation_code: payload.dig("report_metadata", "confirmation_code")
+      confirmation_code: confirmation_code
     }.to_json
   end
 

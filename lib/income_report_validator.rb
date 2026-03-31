@@ -94,7 +94,8 @@ class IncomeReportValidator
 
     validate_employee_information(record["employee_information"], "#{prefix}.employee_information")
 
-    validate_required_enum(record, "pay_frequency", PAY_FREQUENCIES, "#{prefix}.pay_frequency")
+    # pay_frequency is nullable — some aggregators (e.g. Argyle) return null for gig workers
+    validate_nullable_enum(record, "pay_frequency", PAY_FREQUENCIES, "#{prefix}.pay_frequency")
 
     if record.key?("base_compensation") && !record["base_compensation"].nil?
       validate_base_compensation(record["base_compensation"], "#{prefix}.base_compensation")
