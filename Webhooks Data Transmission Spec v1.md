@@ -192,7 +192,7 @@ Content-Length: 5648
 
 {
   "report_metadata": {
-    "confirmation_code": "LALDH00100002",
+    "confirmation_code": "LALDH00100001",
     "report_date_range": {
       "start_date": "2025-11-01",
       "end_date": "2026-02-01"
@@ -230,7 +230,7 @@ Content-Length: 5648
       },
       "pay_frequency": "BIWEEKLY",
       "base_compensation": {
-        "rate": 32.50,
+        "rate": 12.50,
         "interval": "HOURLY"
       },
       "gig_monthly_summaries": null,
@@ -240,7 +240,7 @@ Content-Length: 5648
           "year": "2026",
           "total_hours": 168.0,
           "number_of_paychecks": 2,
-          "gross_income": 8050.00,
+          "gross_income": 2590.00,
           "partial_month": false,
           "partial_month_start": null,
           "partial_month_end": null
@@ -254,17 +254,22 @@ Content-Length: 5648
             "start": "2025-12-29",
             "end": "2026-01-04"
           },
-          "gross_pay": 2600.00,
-          "net_pay": 1950.40,
+          "gross_pay": 1050.00,
+          "net_pay": 843.16,
           "hours_worked": 80.0,
           "base_hours_paid": 80.0,
-          "gross_pay_ytd": 2600.00,
+          "gross_pay_ytd": 1050.00,
           "gross_pay_line_items": [
-            { "name": "Regular", "amount": 2600.00 }
+            { "name": "Regular Pay (Hourly)", "amount": 850.00 },
+            { "name": "Weekend - Premium", "amount": 28.92},
+            { "name": "Weekend Prem Night Diff", "amount": 1.08},
+            { "name": "Sick Time with shift", "amount": 50.00},
+            { "name": "Paid Time Off - Misc", "amount": 100.00},
+            { "name": "Imputed Income - Bravo Award", "amount": 20.00}
           ],
           "deductions": [
-            { "name": "Medical", "type": "PRETAX", "amount": 120.00 },
-            { "name": "401k", "type": "PRETAX", "amount": 260.00 }
+            { "name": "Medical", "type": "PRETAX", "amount": 50.00 },
+            { "name": "401k", "type": "PRETAX", "amount": 25.00 }
           ]
         },
         {
@@ -273,20 +278,20 @@ Content-Length: 5648
             "start": "2026-01-05",
             "end": "2026-01-18"
           },
-          "gross_pay": 5450.00,
-          "net_pay": 3985.50,
+          "gross_pay": 1390.00,
+          "net_pay": 978.19,
           "hours_worked": 88.0,
           "base_hours_paid": 80.0,
-          "gross_pay_ytd": 8050.00,
+          "gross_pay_ytd": 2440.00,
           "gross_pay_line_items": [
-            { "name": "Regular", "amount": 2600.00 },
-            { "name": "Overtime", "amount": 390.00 },
-            { "name": "Bonus", "amount": 2300.00 },
-            { "name": "Other", "amount": 160.00 }
+            { "name": "Regular", "amount": 1000.00 },
+            { "name": "Overtime", "amount": 150.00 },
+            { "name": "Tips", "amount": 10.00 },
+            { "name": "Other", "amount": 230.00 }
           ],
           "deductions": [
-            { "name": "Medical", "type": "PRETAX", "amount": 120.00 },
-            { "name": "401k", "type": "PRETAX", "amount": 545.00 }
+            { "name": "Medical", "type": "PRETAX", "amount": 50.00 },
+            { "name": "401k", "type": "PRETAX", "amount": 40.00 }
           ]
         }
       ]
@@ -338,7 +343,7 @@ Content-Length: 5648
       "gig_payments": [
         { "pay_date": "2026-01-26", "amount": 340.25 },
         { "pay_date": "2026-01-19", "amount": 280.50 },
-        { "pay_date": "2025-12-29", "amount": 315.10 }, 
+        { "pay_date": "2025-12-29", "amount": 315.10 },
         { "pay_date": "2025-12-22", "amount": 420.75 },
         { "pay_date": "2025-12-15", "amount": 290.40 },
         { "pay_date": "2025-12-08", "amount": 310.20 }
