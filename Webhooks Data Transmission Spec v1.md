@@ -240,7 +240,7 @@ Content-Length: 5648
           "year": "2026",
           "total_hours": 168.0,
           "number_of_paychecks": 2,
-          "gross_income": 2590.00,
+          "gross_income": 2440.00,
           "partial_month": false,
           "partial_month_start": null,
           "partial_month_end": null
