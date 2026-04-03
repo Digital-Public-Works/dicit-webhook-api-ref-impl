@@ -6,6 +6,7 @@
 | 3/10/2026 | Update partial_month documentation and add partial_month_start and partial_month_end |
 | 3/12/2026 | Update month to be integer instead of 3 letter code |
 | 3/27/2026 | Make pay_frequency nullable, fix sample payload pay_period fields, add deductions nullable, clarify partial_month fields |
+| 4/3/2026 | Add first_name and last_name to employee_information |
 
 # Introduction
 
@@ -98,6 +99,8 @@ The request body contains the income data. This payload is formatted as a JSON o
     | `employment_start_date` | Date | Yes |  |
     | `employment_end_date` | Date | Yes | If the client is still employed, value will be `null`. |
     | `employee_information` | Object | No |  |
+    |   ├ `first_name` | String | Yes | First name of client as reported by the payroll system. |
+    |   ├ `last_name` | String | Yes | Last name of client as reported by the payroll system. |
     |   ├ `full_name` | String | Yes | Full name of client as in the payroll system. |
     |   └ `ssn` | String | Yes | Last four digits of client SSN as reported by payroll system. 
     Format: `XXX-XX-1234` |
@@ -225,6 +228,8 @@ Content-Length: 5648
       "employment_start_date": "2025-12-29",
       "employment_end_date": null,
       "employee_information": {
+        "first_name": "Elena",
+        "last_name": "Thompson",
         "full_name": "Elena Thompson",
         "ssn": "XXX-XX-4455"
       },
@@ -314,6 +319,8 @@ Content-Length: 5648
       "employment_start_date": "2025-05-20",
       "employment_end_date": null,
       "employee_information": {
+        "first_name": "Elena",
+        "last_name": "Thompson",
         "full_name": "Elena Thompson",
         "ssn": "XXX-XX-4455"
       },
