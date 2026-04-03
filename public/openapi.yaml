@@ -396,6 +396,16 @@ components:
     EmployeeInformation:
       type: object
       properties:
+        first_name:
+          type: string
+          nullable: true
+          description: First name of client as reported by the payroll system.
+          example: "Elena"
+        last_name:
+          type: string
+          nullable: true
+          description: Last name of client as reported by the payroll system.
+          example: "Thompson"
         full_name:
           type: string
           nullable: true
