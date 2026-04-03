@@ -130,6 +130,8 @@ class IncomeReportValidator
       return
     end
 
+    validate_nullable_string(info, "first_name", "#{prefix}.first_name")
+    validate_nullable_string(info, "last_name", "#{prefix}.last_name")
     validate_nullable_string(info, "full_name", "#{prefix}.full_name")
 
     if info.key?("ssn") && !info["ssn"].nil?
