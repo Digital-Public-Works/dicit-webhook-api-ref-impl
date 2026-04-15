@@ -81,6 +81,20 @@ class WebhookAPIReference < Sinatra::Base
 
     # TODO: Insert your processing of this payload here
 
+    # Dump received payload to disk for validation/debugging
+    payload_dir = ENV["PAYLOAD_DIR"]
+    if payload_dir
+      require "fileutils"
+      FileUtils.mkdir_p(payload_dir)
+
+      confirmation = request.env["HTTP_X_VMI_CONFIRMATION_CODE"] || "unknown"
+      timestamp = Time.now.strftime("%Y%m%dT%H%M%S")
+      filename = "#{timestamp}_#{confirmation}.json"
+
+      File.write(File.join(payload_dir, filename), JSON.pretty_generate(payload))
+      logger.info "Saved payload to #{payload_dir}/#{filename}"
+    end
+
     confirmation_code = payload.dig("report_metadata", "confirmation_code")
     record_count = payload.dig("employment_records")&.size || 0
     date_range_start = payload.dig("report_metadata", "report_date_range", "start_date")
