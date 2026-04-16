@@ -3,6 +3,7 @@ class IncomeReportValidator
   DATE_REGEX = /\A\d{4}-\d{2}-\d{2}\z/
   DATETIME_REGEX = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/
   SSN_REGEX = /\AXXX-XX-\d{4}\z/
+  FULL_SSN_REGEX = /\\d{3}-\d{2}-\d{4}\z/
   YEAR_REGEX = /\A\d{4}\z/
 
   EMPLOYMENT_TYPES = %w[W2 GIG].freeze
@@ -135,8 +136,8 @@ class IncomeReportValidator
     validate_nullable_string(info, "full_name", "#{prefix}.full_name")
 
     if info.key?("ssn") && !info["ssn"].nil?
-      unless info["ssn"].is_a?(String) && info["ssn"].match?(SSN_REGEX)
-        add_error("#{prefix}.ssn", "Must match format XXX-XX-1234.")
+      unless info["ssn"].is_a?(String) && (info["ssn"].match?(SSN_REGEX) || info["ssn"].match?(FULL_SSN_REGEX))
+        add_error("#{prefix}.ssn", "Must match format XXX-XX-1234 or 123-45-6789.")
       end
     end
   end
@@ -336,6 +337,24 @@ class IncomeReportValidator
       validate_nullable_string(d, "name", "#{dp}.name")
       validate_required_enum(d, "type", DEDUCTION_TYPES, "#{dp}.type")
       validate_required_decimal(d, "amount", "#{dp}.amount")
+    end
+    
+    def validate_direct_deposit_accounts(direct_deposit_accounts)
+      if direct_deposit_accounts.nil?
+        add_error(prefix, "This field is required.")
+        return
+      end
+      unless direct_deposit_accounts.is_a?(Array)
+        add_error(prefix, "Must be an array.")
+        return
+      end
+
+      direct_deposit_accounts.each do |dda|
+        unless dda.is_a?(String)
+          add_error("Direct deposit account numbers must be strings.")
+          next
+        end
+      end
     end
   end
 

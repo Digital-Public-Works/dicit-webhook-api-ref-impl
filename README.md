@@ -121,6 +121,14 @@ The server validates the full payload structure per the spec:
 
 Date fields must be `YYYY-MM-DD`, datetimes must be `YYYY-MM-DDTHH:MM:SSZ`.
 
+## Sensitive Fields
+
+VMI can optionally send more sensitive data as part of its webhook requests. These include:
+
+- Direct deposit account number (last 4): This field is not included by default; further discussion will be needed if requested given this value's sensitive nature. 
+- Full SSN: This is not included by default, you may request it, but there is a larger PII risk of including SSN so further discussion will be needed
+
+
 ## Response Codes
 
 | Code | Meaning |
