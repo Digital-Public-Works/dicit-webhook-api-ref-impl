@@ -100,10 +100,12 @@ class WebhookAPIReference < Sinatra::Base
     date_range_start = payload.dig("report_metadata", "report_date_range", "start_date")
     date_range_end = payload.dig("report_metadata", "report_date_range", "end_date")
     consent_ts = payload.dig("report_metadata", "consent_timestamp_utc")
+    filenames = payload.dig("report_metadata", "filenames")
     logger.info "Request accepted: confirmation_code=#{confirmation_code} " \
                 "employment_records=#{record_count} " \
                 "date_range=#{date_range_start}..#{date_range_end} " \
-                "consent_timestamp=#{consent_ts}"
+                "consent_timestamp=#{consent_ts} " \
+                "filenames=#{filenames.is_a?(Hash) ? filenames.inspect : '[NONE]'}"
 
     # success! Let VMI know that it all worked
     status 200

@@ -64,6 +64,10 @@ paths:
             example:
               report_metadata:
                 confirmation_code: "CONF0001"
+                filenames:
+                  sftp: "CBVPilot_00012345_20260513_ConfCONF0001.pdf"
+                  encrypted_s3: "CBVPilot_00012345_20260513_ConfCONF0001.tar.gz.gpg"
+                  unencrypted_s3: "CBVPilot_00012345_20260513_ConfCONF0001.tar.gz"
                 report_date_range:
                   start_date: "2025-11-01"
                   end_date: "2026-02-01"
@@ -296,6 +300,23 @@ components:
           format: date-time
           description: Date and time when client provided legal consent (YYYY-MM-DDTHH:MM:SSZ).
           example: "2026-02-01T10:30:00Z"
+        filenames:
+          type: object
+          description: |
+            When VMI transmits via SFTP or S3 in addition to this webhook,
+            this object maps each transmission method to the filename of the companion
+            file delivered on that channel. Keys correspond to the transmission method
+            (one or more of `sftp`, `encrypted_s3`, `unencrypted_s3`); values are full
+            filenames including extension. Methods that
+            produce no file (e.g. `webhook`, `shared_email`, `json`) are also omitted.
+          additionalProperties:
+            type: string
+            description: Full filename including extension.
+            maxLength: 100
+          example:
+            sftp: "CBVPilot_00012345_20260513_ConfCONF0001.pdf"
+            encrypted_s3: "CBVPilot_00012345_20260513_ConfCONF0001.tar.gz.gpg"
+            unencrypted_s3: "CBVPilot_00012345_20260513_ConfCONF0001.tar.gz"
 
     ClientInformation:
       type: object

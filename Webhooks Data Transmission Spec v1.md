@@ -7,6 +7,7 @@
 | 3/12/2026 | Update month to be integer instead of 3 letter code |
 | 3/27/2026 | Make pay_frequency nullable, fix sample payload pay_period fields, add deductions nullable, clarify partial_month fields |
 | 4/3/2026 | Add first_name and last_name to employee_information |
+| 5/15/2026 | Add optional filenames object to report_metadata to identify companion files transmitted via SFTP or S3 |
 
 # Introduction
 
@@ -80,6 +81,19 @@ The request body contains the income data. This payload is formatted as a JSON o
     |   ├ `start_date` | Date | No | Earliest date of review period  |
     |   └  `end_date` | Date | No | Last date of review period  |
     | `consent_timestamp_utc` | DateTime | No | Date and time when client provided legal consent for data retrieval. |
+    | `filenames` | Object | Yes | Optional map of transmission method to companion-file filename. Present when VMI delivers files via SFTP or S3 in addition to this webhook; absent or empty otherwise. See **Filenames** below. |
+
+- **Filenames** (object) — optional
+
+    Maps each non-webhook transmission method that the sending agency has configured to the full filename of the companion file delivered on that channel. Receivers can use this to join this webhook payload to the file(s) received on the SFTP / S3 channel(s).
+
+    | **Field Name** | **Type** | **Nullable?** | **Description** |
+    | --- | --- | --- | --- |
+    | `sftp` | String | Yes | Filename of the PDF delivered via SFTP, e.g. `CBVPilot_00012345_20260513_ConfABC123.pdf`. Present only when SFTP transmission is configured. |
+    | `encrypted_s3` | String | Yes | Filename of the encrypted tarball delivered to S3, e.g. `CBVPilot_00012345_20260513_ConfABC123.tar.gz.gpg`. Present only when encrypted-S3 transmission is configured. |
+    | `unencrypted_s3` | String | Yes | Filename of the unencrypted tarball delivered to S3, e.g. `CBVPilot_00012345_20260513_ConfABC123.tar.gz`. Present only when unencrypted-S3 transmission is configured. |
+
+    Filename format: `CBVPilot_<8-char padded partner_identifier>_<YYYYMMDD in agency tz>_Conf<confirmation_code>.<ext>`, with each value ≤ 100 characters. The key `webhook` will never appear (the dict points at companion files, not at this payload itself); methods that produce no file (e.g. `shared_email`, `json`) are also omitted. Partners should treat unknown keys as a no-op (per the flexible-parser guidance above).
 
 - **Client Information** (object) - Varies by partner
     
@@ -196,6 +210,11 @@ Content-Length: 5648
 {
   "report_metadata": {
     "confirmation_code": "LALDH00100001",
+    "filenames": {
+      "sftp": "CBVPilot_00012345_20260513_ConfLALDH00100001.pdf",
+      "encrypted_s3": "CBVPilot_00012345_20260513_ConfLALDH00100001.tar.gz.gpg",
+      "unencrypted_s3": "CBVPilot_00012345_20260513_ConfLALDH00100001.tar.gz"
+    },
     "report_date_range": {
       "start_date": "2025-11-01",
       "end_date": "2026-02-01"
