@@ -106,7 +106,7 @@ This matches the signing logic in the VMI platform (`JsonApiSignature`).
 
 The server validates the full payload structure per the spec:
 
-- **Report Metadata** — `confirmation_code`, `report_date_range` (start/end dates), `consent_timestamp_utc`
+- **Report Metadata** — `confirmation_code`, `report_date_range` (start/end dates), `consent_timestamp_utc`, optional `filenames` map of transmission method (`sftp`, `encrypted_s3`, `unencrypted_s3`) → companion filename
 - **Client Information** — must be an object (fields vary by partner)
 - **Employment Records** — array of W2 or GIG records, each validated for:
   - `employment_type` enum (`W2`, `GIG`)
