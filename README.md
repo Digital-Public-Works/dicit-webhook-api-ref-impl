@@ -39,6 +39,17 @@ docker run --rm -p 9292:9292 \
   vmi-webhook-api
 ```
 
+To dump received payloads to a local directory for inspection:
+
+```bash
+mkdir -p ./tmp/payloads
+docker run --rm -p 9292:9292 \
+  -e VMI_API_KEY=my-secure-guid \
+  -e PAYLOAD_DIR=/data/payloads \
+  -v "$(pwd)/tmp/payloads:/data/payloads" \
+  vmi-webhook-api
+```
+
 ## Available Endpoints
 
 | Path | Method | Description |
@@ -56,6 +67,7 @@ Environment variables:
 |----------|---------|-------------|
 | `VMI_API_KEY` | `abc123_example_key` | The API key to validate against the `X-VMI-API-Key` header |
 | `VERIFY_SIGNATURE` | `false` | Set to `true` to enable HMAC signature verification |
+| `PAYLOAD_DIR` | *(unset)* | When set, received payloads are saved as JSON files to this directory (e.g. `/data/payloads`). Files are named `{timestamp}_{confirmation_code}.json`. |
 
 > **Note:** Signature verification is disabled by default because this is a reference
 > implementation intended for development and testing. In a production deployment,
@@ -94,7 +106,7 @@ This matches the signing logic in the VMI platform (`JsonApiSignature`).
 
 The server validates the full payload structure per the spec:
 
-- **Report Metadata** — `confirmation_code`, `report_date_range` (start/end dates), `consent_timestamp_utc`
+- **Report Metadata** — `confirmation_code`, `report_date_range` (start/end dates), `consent_timestamp_utc`, optional `filenames` map of transmission method (`sftp`, `encrypted_s3`, `unencrypted_s3`) → companion filename
 - **Client Information** — must be an object (fields vary by partner)
 - **Employment Records** — array of W2 or GIG records, each validated for:
   - `employment_type` enum (`W2`, `GIG`)

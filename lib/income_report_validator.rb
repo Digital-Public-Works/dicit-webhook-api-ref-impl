@@ -51,6 +51,21 @@ class IncomeReportValidator
     end
 
     validate_required_datetime(meta, "consent_timestamp_utc", "report_metadata.consent_timestamp_utc")
+
+    validate_filenames(meta["filenames"], "report_metadata.filenames") if meta.key?("filenames") && !meta["filenames"].nil?
+  end
+
+  def validate_filenames(filenames, prefix)
+    unless filenames.is_a?(Hash)
+      add_error(prefix, "Must be an object.")
+      return
+    end
+
+    filenames.each do |key, value|
+      unless value.is_a?(String)
+        add_error("#{prefix}.#{key}", "Must be a string.")
+      end
+    end
   end
 
   # --- Client Information ---
