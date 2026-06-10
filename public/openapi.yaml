@@ -673,7 +673,7 @@ components:
             $ref: '#/components/schemas/Deduction'
         direct_deposit_accounts:
           type: array
-          description: "Last 4 digits of direct deposit (ACH) account numbers. Gated per-partner and off by default; sent as an empty array when not enabled."
+          description: "Last 4 digits of direct deposit (ACH) account numbers. Off by default; sent as an empty array unless this field is enabled for your integration."
           items:
             type: string
             pattern: '^\d{4}$'
@@ -685,7 +685,7 @@ components:
             - "2222"
         payout_card_accounts:
           type: array
-          description: "Last 4 digits of payout (pay) card numbers. Gated per-partner and off by default; sent as an empty array when not enabled."
+          description: "Last 4 digits of payout (pay) card numbers. Off by default; sent as an empty array unless this field is enabled for your integration."
           items:
             type: string
             pattern: '^\d{4}$'

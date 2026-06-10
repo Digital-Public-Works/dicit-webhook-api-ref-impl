@@ -358,9 +358,7 @@ class IncomeReportValidator
     end
   end
 
-  # Last-4 deposit account / payout card numbers. These sensitive fields are
-  # gated per-partner and default off, so they may be omitted entirely or sent
-  # as an empty array. When present, each entry must be a 4-digit string.
+  # Last-4 deposit account / payout card numbers. Optional; each entry is a 4-digit string.
   def validate_account_last_four(accounts, prefix)
     return if accounts.nil?
     unless accounts.is_a?(Array)

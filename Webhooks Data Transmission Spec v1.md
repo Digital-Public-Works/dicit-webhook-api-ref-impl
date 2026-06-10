@@ -187,8 +187,8 @@ The request body contains the income data. This payload is formatted as a JSON o
     |   ├ `name` | String | Yes |  |
     |   ├ `type` | Enum | No | Must be: `PRETAX` ,`POSTTAX` , or `UNKNOWN`  |
     |   └ `amount` | Decimal | No |  |
-    | `direct_deposit_accounts` | Array of String | No | Last 4 digits of the client's direct deposit (ACH) account numbers. Gated per-partner and off by default; sent as an empty array when not enabled. |
-    | `payout_card_accounts` | Array of String | No | Last 4 digits of the client's payout (pay) card numbers. Gated per-partner and off by default; sent as an empty array when not enabled. |
+    | `direct_deposit_accounts` | Array of String | No | Last 4 digits of the client's direct deposit (ACH) account numbers. Off by default; sent as an empty array unless this field is enabled for your integration. |
+    | `payout_card_accounts` | Array of String | No | Last 4 digits of the client's payout (pay) card numbers. Off by default; sent as an empty array unless this field is enabled for your integration. |
 - **Gig Payment (object)**
     
     

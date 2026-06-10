@@ -123,7 +123,7 @@ Date fields must be `YYYY-MM-DD`, datetimes must be `YYYY-MM-DDTHH:MM:SSZ`.
 
 ## Sensitive Fields
 
-VMI can optionally send more sensitive data as part of its webhook requests. Each of these is gated per-partner and **off by default** — they must be explicitly enabled after discussion given their sensitivity:
+VMI can optionally send more sensitive data as part of its webhook requests. Each of these is **off by default** — it is sent only after being enabled for your integration, which requires a prior discussion given the sensitivity:
 
 - **Direct deposit account numbers** (`w2_payments[].direct_deposit_accounts`): Last 4 digits of the client's direct deposit (ACH) account numbers. Sent as an empty array when not enabled.
 - **Payout card numbers** (`w2_payments[].payout_card_accounts`): Last 4 digits of the client's payout (pay) card numbers. Sent as an empty array when not enabled.
