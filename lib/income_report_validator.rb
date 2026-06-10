@@ -3,8 +3,9 @@ class IncomeReportValidator
   DATE_REGEX = /\A\d{4}-\d{2}-\d{2}\z/
   DATETIME_REGEX = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/
   SSN_REGEX = /\AXXX-XX-\d{4}\z/
-  FULL_SSN_REGEX = /\\d{3}-\d{2}-\d{4}\z/
+  FULL_SSN_REGEX = /\A\d{3}-\d{2}-\d{4}\z/
   YEAR_REGEX = /\A\d{4}\z/
+  ACCOUNT_LAST_FOUR_REGEX = /\A\d{4}\z/
 
   EMPLOYMENT_TYPES = %w[W2 GIG].freeze
   EMPLOYMENT_STATUSES = %w[EMPLOYED ACTIVE INACTIVE TERMINATED].freeze
@@ -294,6 +295,8 @@ class IncomeReportValidator
 
       validate_gross_pay_line_items(pay["gross_pay_line_items"], "#{p}.gross_pay_line_items")
       validate_deductions(pay["deductions"], "#{p}.deductions")
+      validate_account_last_four(pay["direct_deposit_accounts"], "#{p}.direct_deposit_accounts")
+      validate_account_last_four(pay["payout_card_accounts"], "#{p}.payout_card_accounts")
     end
   end
 
@@ -338,22 +341,21 @@ class IncomeReportValidator
       validate_required_enum(d, "type", DEDUCTION_TYPES, "#{dp}.type")
       validate_required_decimal(d, "amount", "#{dp}.amount")
     end
-    
-    def validate_direct_deposit_accounts(direct_deposit_accounts)
-      if direct_deposit_accounts.nil?
-        add_error(prefix, "This field is required.")
-        return
-      end
-      unless direct_deposit_accounts.is_a?(Array)
-        add_error(prefix, "Must be an array.")
-        return
-      end
+  end
 
-      direct_deposit_accounts.each do |dda|
-        unless dda.is_a?(String)
-          add_error("Direct deposit account numbers must be strings.")
-          next
-        end
+  # Last-4 deposit account / payout card numbers. These sensitive fields are
+  # gated per-partner and default off, so they may be omitted entirely or sent
+  # as an empty array. When present, each entry must be a 4-digit string.
+  def validate_account_last_four(accounts, prefix)
+    return if accounts.nil?
+    unless accounts.is_a?(Array)
+      add_error(prefix, "Must be an array or null.")
+      return
+    end
+
+    accounts.each_with_index do |account, i|
+      unless account.is_a?(String) && account.match?(ACCOUNT_LAST_FOUR_REGEX)
+        add_error("#{prefix}[#{i}]", "Must be a 4-digit string.")
       end
     end
   end

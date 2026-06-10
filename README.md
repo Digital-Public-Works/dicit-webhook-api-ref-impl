@@ -100,21 +100,22 @@ The server validates the full payload structure per the spec:
   - `employment_type` enum (`W2`, `GIG`)
   - `employment_status` enum (`EMPLOYED`, `ACTIVE`, `INACTIVE`, `TERMINATED`)
   - `employer_information` with required `employer_name` and optional `employer_address` (`line1`, `line2`, `city`, `state`, `postal_code`, `country`)
-  - `employee_information` with optional SSN format validation (`XXX-XX-1234`)
+  - `employee_information` with optional SSN format validation (masked `XXX-XX-1234`, or full `123-45-6789` when enabled — see [Sensitive Fields](#sensitive-fields))
   - `employment_start_date` and `employment_end_date` (nullable date fields)
   - `pay_frequency` enum (`ANNUALLY`, `BIWEEKLY`, `DAILY`, `HOURLY`, `MONTHLY`, `QUARTERLY`, `SEMIMONTHLY`, `WEEKLY`)
   - `base_compensation` (nullable) — `rate` + `interval` enum (`HOURLY`, `DAILY`, `WEEKLY`, `BIWEEKLY`, `SEMIMONTHLY`, `MONTHLY`, `ANNUAL`, `SALARY`)
-  - **W2** (nullable): `w2_monthly_summaries` (month 1-12, year, `number_of_paychecks`, `gross_income`, partial month fields), `w2_payments` (gross/net pay, YTD, line items, deductions with `PRETAX`/`POSTTAX`/`UNKNOWN` type)
+  - **W2** (nullable): `w2_monthly_summaries` (month 1-12, year, `number_of_paychecks`, `gross_income`, partial month fields), `w2_payments` (gross/net pay, YTD, line items, deductions with `PRETAX`/`POSTTAX`/`UNKNOWN` type, optional `direct_deposit_accounts`/`payout_card_accounts` last-4 arrays)
   - **GIG** (nullable): `gig_monthly_summaries` (month 1-12, year, hours, `gross_earnings`, mileage expenses), `gig_payments` (pay date + amount)
 
 Date fields must be `YYYY-MM-DD`, datetimes must be `YYYY-MM-DDTHH:MM:SSZ`.
 
 ## Sensitive Fields
 
-VMI can optionally send more sensitive data as part of its webhook requests. These include:
+VMI can optionally send more sensitive data as part of its webhook requests. Each of these is gated per-partner and **off by default** — they must be explicitly enabled after discussion given their sensitivity:
 
-- Direct deposit account number (last 4): This field is not included by default; further discussion will be needed if requested given this value's sensitive nature. 
-- Full SSN: This is not included by default, you may request it, but there is a larger PII risk of including SSN so further discussion will be needed
+- **Direct deposit account numbers** (`w2_payments[].direct_deposit_accounts`): Last 4 digits of the client's direct deposit (ACH) account numbers. Sent as an empty array when not enabled.
+- **Payout card numbers** (`w2_payments[].payout_card_accounts`): Last 4 digits of the client's payout (pay) card numbers. Sent as an empty array when not enabled.
+- **Full SSN** (`employee_information.ssn`): When enabled, the `ssn` field carries the full unmasked SSN (`123-45-6789`) instead of the default masked form (`XXX-XX-1234`). This carries a larger PII risk, so further discussion is required before enabling.
 
 
 ## Response Codes
