@@ -8,6 +8,7 @@
 | 3/27/2026 | Make pay_frequency nullable, fix sample payload pay_period fields, add deductions nullable, clarify partial_month fields |
 | 4/3/2026 | Add first_name and last_name to employee_information |
 | 5/15/2026 | Add optional filenames object to report_metadata to identify companion files transmitted via SFTP or S3 |
+| 6/10/2026 | Add optional sensitive fields (off by default): direct_deposit_accounts and payout_card_accounts last-4 arrays on W2 payments, and optional full unmasked SSN |
 
 # Introduction
 
@@ -116,8 +117,7 @@ The request body contains the income data. This payload is formatted as a JSON o
     |   ├ `first_name` | String | Yes | First name of client as reported by the payroll system. |
     |   ├ `last_name` | String | Yes | Last name of client as reported by the payroll system. |
     |   ├ `full_name` | String | Yes | Full name of client as in the payroll system. |
-    |   └ `ssn` | String | Yes | Last four digits of client SSN as reported by payroll system. 
-    Format: `XXX-XX-1234` |
+    |   └ `ssn` | String | Yes | Client SSN as reported by payroll system. Masked by default — last four digits only, format `XXX-XX-1234`. Partners may optionally have the full unmasked SSN enabled (format `123-45-6789`); this is off by default and requires discussion given the PII risk. |
     | `pay_frequency` | Enum | Yes | Must be: `ANNUALLY`, `BIWEEKLY`, `DAILY`, `HOURLY`, `MONTHLY`, `QUARTERLY`, `SEMIMONTHLY`, `SEMIWEEKLY`, `VARIABLE`, `WEEKLY`. Null if the payroll aggregator does not report a pay frequency. |
     | `base_compensation` | Object | Yes | If no information is available, this value is `null`. |
     |   ├ `rate` | Decimal | Yes | Wages in dollars |
@@ -187,6 +187,8 @@ The request body contains the income data. This payload is formatted as a JSON o
     |   ├ `name` | String | Yes |  |
     |   ├ `type` | Enum | No | Must be: `PRETAX` ,`POSTTAX` , or `UNKNOWN`  |
     |   └ `amount` | Decimal | No |  |
+    | `direct_deposit_accounts` | Array of String | No | Last 4 digits of the client's direct deposit (ACH) account numbers. Off by default; sent as an empty array unless this field is enabled for your integration. |
+    | `payout_card_accounts` | Array of String | No | Last 4 digits of the client's payout (pay) card numbers. Off by default; sent as an empty array unless this field is enabled for your integration. |
 - **Gig Payment (object)**
     
     
@@ -294,7 +296,9 @@ Content-Length: 5648
           "deductions": [
             { "name": "Medical", "type": "PRETAX", "amount": 50.00 },
             { "name": "401k", "type": "PRETAX", "amount": 25.00 }
-          ]
+          ],
+          "direct_deposit_accounts": ["1234", "4567"],
+          "payout_card_accounts": ["8910"]
         },
         {
           "pay_date": "2026-01-23",

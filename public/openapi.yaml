@@ -129,6 +129,11 @@ paths:
                         - name: "401k"
                           type: "PRETAX"
                           amount: 260.00
+                      direct_deposit_accounts:
+                        - "1234"
+                        - "4567"
+                      payout_card_accounts:
+                        - "8910"
                   gig_monthly_summaries: null
                   gig_payments: null
                 - employment_type: "GIG"
@@ -435,9 +440,14 @@ components:
         ssn:
           type: string
           nullable: true
-          pattern: '^XXX-XX-\d{4}$'
-          description: "Last four digits of client SSN. Format: XXX-XX-1234"
-          example: "XXX-XX-4455"
+          description: "Applicant SSN. Depending on whether full SSNs have been enabled, this may be masked (the default)."
+          oneOf:
+            - description: "Last four digits of client SSN. Format: XXX-XX-1234"
+              pattern: '^XXX-XX-\d{4}$'
+              example: "XXX-XX-4455"
+            - description: "Full unmasked SSN. Only emitted when specifically configured. Format: 123-45-6789"
+              pattern: '^\d{3}-\d{2}-\d{4}$'
+              example: "123-45-6789"
 
     BaseCompensation:
       type: object
@@ -661,6 +671,29 @@ components:
           description: Itemized deductions.
           items:
             $ref: '#/components/schemas/Deduction'
+        direct_deposit_accounts:
+          type: array
+          description: "Last 4 digits of direct deposit (ACH) account numbers. Off by default; sent as an empty array unless this field is enabled for your integration."
+          items:
+            type: string
+            pattern: '^\d{4}$'
+            minLength: 4
+            maxLength: 4
+            example: "1111"
+          example:
+            - "1111"
+            - "2222"
+        payout_card_accounts:
+          type: array
+          description: "Last 4 digits of payout (pay) card numbers. Off by default; sent as an empty array unless this field is enabled for your integration."
+          items:
+            type: string
+            pattern: '^\d{4}$'
+            minLength: 4
+            maxLength: 4
+            example: "8910"
+          example:
+            - "8910"
 
     GrossPayLineItem:
       type: object
