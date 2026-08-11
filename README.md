@@ -118,6 +118,7 @@ The server validates the full payload structure per the spec:
   - `base_compensation` (nullable) — `rate` + `interval` enum (`HOURLY`, `DAILY`, `WEEKLY`, `BIWEEKLY`, `SEMIMONTHLY`, `MONTHLY`, `ANNUAL`, `SALARY`)
   - **W2** (nullable): `w2_monthly_summaries` (month 1-12, year, `number_of_paychecks`, `gross_income`, partial month fields), `w2_payments` (gross/net pay, YTD, line items, deductions with `PRETAX`/`POSTTAX`/`UNKNOWN` type)
   - **GIG** (nullable): `gig_monthly_summaries` (month 1-12, year, hours, `gross_earnings`, mileage expenses), `gig_payments` (pay date + amount)
+- **Paystub Images Included** — top-level `paystub_images_included` boolean indicating whether a companion pay stub images file has been delivered with at least one actual pay stub image; `false` when the partner does not have pay stub images enabled.
 
 Date fields must be `YYYY-MM-DD`, datetimes must be `YYYY-MM-DDTHH:MM:SSZ`.
 
