@@ -172,6 +172,7 @@ paths:
                       amount: 280.50
                   w2_monthly_summaries: null
                   w2_payments: null
+              paystub_images_included: true
       responses:
         '200':
           description: Income report received successfully.
@@ -267,6 +268,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EmploymentRecord'
+        paystub_images_included:
+          type: boolean
+          default: false
+          description: |
+            Indicates whether a companion pay stub images file has been
+            delivered with at least one actual pay stub image. False when the
+            partner does not have pay stub images enabled.
+          example: true
 
     ReportMetadata:
       type: object

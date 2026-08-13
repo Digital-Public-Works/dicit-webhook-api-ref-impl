@@ -8,6 +8,7 @@
 | 3/27/2026 | Make pay_frequency nullable, fix sample payload pay_period fields, add deductions nullable, clarify partial_month fields |
 | 4/3/2026 | Add first_name and last_name to employee_information |
 | 5/15/2026 | Add optional filenames object to report_metadata to identify companion files transmitted via SFTP or S3 |
+| 6/12/2026 | Add optional top-level paystub_images_included flag indicating whether the companion pay stub images file contains any pay stub images |
 
 # Introduction
 
@@ -126,6 +127,12 @@ The request body contains the income data. This payload is formatted as a JSON o
     | `gig_monthly_summaries` | Array | Yes | If `employment_type` is `GIG`, contains zero or more Gig Monthly Summary objects, otherwise `null` . |
     | `w2_payments` | Array | Yes | If `employment_type` is `W2`, contains zero or more W2 Payment objects, otherwise `null` . |
     | `gig_payments` | Array | Yes | If `employment_type` is `GIG`, contains zero or more Gig Payment objects, otherwise `null` . |
+
+- **paystub_images_included** (Boolean) — top-level
+
+    | **Field Name** | **Type** | **Nullable?** | **Description** |
+    | --- | --- | --- | --- |
+    | `paystub_images_included` | Boolean | No | Top-level flag indicating whether a companion pay stub images file has been delivered with at least one actual pay stub image. `false` when the partner does not have pay stub images enabled. |
 
 - **Address (object)**
     
@@ -376,7 +383,8 @@ Content-Length: 5648
       ],
       "w2_payments": null
     }
-  ]
+  ],
+  "paystub_images_included": true
 }
 ```
 
