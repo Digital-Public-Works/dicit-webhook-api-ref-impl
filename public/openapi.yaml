@@ -7,7 +7,22 @@ info:
 
     The partner must build this API endpoint and ensure that data is ingested
     into the correct case within the eligibility management system.
-  version: "1.0.0"
+
+    VMI sends two event types to the endpoint: `ReportSubmission` (the income
+    report) and `TransmissionComplete` (a file delivered by another
+    transmission method, such as SFTP or S3, has arrived).
+
+    Each partner's webhook is configured with a contract version:
+    - **Contract 1 (legacy):** the body has no `event_type` (every request is a
+      ReportSubmission), VMI also sends the deprecated `X-VMI-API-Key` header,
+      and no TransmissionComplete events are sent.
+    - **Contract 2:** the body has a top-level `event_type`, the API key is
+      never sent, and TransmissionComplete events are sent.
+
+    Under both contracts, authenticate every request by verifying
+    `X-VMI-Signature`: the hex HMAC-SHA512 of `<X-VMI-Timestamp>:<raw body>`,
+    keyed with the partner's API key, compared in constant time.
+  version: "2.0.0"
   contact:
     name: VMI Team
 
@@ -17,14 +32,15 @@ servers:
 paths:
   /api/v1/income-report:
     post:
-      summary: Receive income report
+      summary: Receive webhook events
       description: |
-        Receives an income report as structured JSON data. Partners are expected
-        to build "flexible" parsers that do not fail when encountering new,
+        Receives webhook events as structured JSON data: a `ReportSubmission`
+        (the income report) or a `TransmissionComplete`. A request with no
+        `event_type` is a contract 1 ReportSubmission. Respond 2xx to, and
+        ignore, an `event_type` you don't recognize. Partners are expected to
+        build "flexible" parsers that do not fail when encountering new,
         unrecognized JSON keys.
       operationId: receiveIncomeReport
-      security:
-        - apiKey: []
       parameters:
         - name: X-VMI-Timestamp
           in: header
@@ -37,7 +53,9 @@ paths:
         - name: X-VMI-Signature
           in: header
           required: true
-          description: HMAC-SHA512 signature calculated from `timestamp:body` using the API key.
+          description: |
+            Hex HMAC-SHA512 of `<X-VMI-Timestamp>:<raw body>`, keyed with the
+            partner's API key. Verify it on every request.
           schema:
             type: string
             example: "77cdb11cfad51afd5b5d5eb8aa1b7735b1578202e479bf82eb36d38ac32c1f0263761fdc9c962e78a367d7e6bc841c8dbc97dcc5dc384cf0c4e36fe3ea3ec5e7"
@@ -50,8 +68,12 @@ paths:
             example: "CONF0001"
         - name: X-VMI-API-Key
           in: header
-          required: true
-          description: Unique secure GUID provided by the partner.
+          required: false
+          deprecated: true
+          description: |
+            (Deprecated) Contract 1 only. The partner's API key, sent in the clear. Not sent
+            under contract 2. Do not authenticate with it; verify
+            `X-VMI-Signature` instead.
           schema:
             type: string
             example: "abc123_example_key"
@@ -60,8 +82,11 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IncomeReport'
+              oneOf:
+                - $ref: '#/components/schemas/IncomeReport'
+                - $ref: '#/components/schemas/TransmissionCompleteEvent'
             example:
+              event_type: "ReportSubmission"
               report_metadata:
                 confirmation_code: "CONF0001"
                 filenames:
@@ -175,15 +200,26 @@ paths:
               paystub_images_included: true
       responses:
         '200':
-          description: Income report received successfully.
+          description: Event received, or an unrecognized event_type was ignored.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
-              example:
-                status: "success"
-                message: "Income report received successfully."
-                confirmation_code: "CONF0001"
+              examples:
+                reportSubmission:
+                  value:
+                    status: "success"
+                    message: "Income report received successfully."
+                    confirmation_code: "CONF0001"
+                transmissionComplete:
+                  value:
+                    status: "success"
+                    message: "Transmission complete event received successfully."
+                    confirmation_code: "CONF0001"
+                ignored:
+                  value:
+                    status: "ignored"
+                    message: "Unrecognized event_type 'SomethingNew' was ignored."
         '400':
           description: Malformed request body or schema validation failure.
           content:
@@ -199,14 +235,14 @@ paths:
                   - field: "case_number"
                     reason: "This field is required."
         '401':
-          description: Authentication or signature verification failed.
+          description: Signature verification failed or a required header is missing.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error_code: "AUTHENTICATION_ERROR"
-                message: "Invalid API key."
+                message: "Signature verification failed."
         '413':
           description: Content-Length exceeds partner server size limit.
           content:
@@ -245,21 +281,22 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
 components:
-  securitySchemes:
-    apiKey:
-      type: apiKey
-      in: header
-      name: X-VMI-API-Key
-      description: Unique secure GUID provided by the partner.
-
   schemas:
     IncomeReport:
       type: object
+      description: A ReportSubmission event.
       required:
         - report_metadata
         - client_information
         - employment_records
       properties:
+        event_type:
+          type: string
+          enum: [ReportSubmission]
+          description: |
+            Always `ReportSubmission` under contract 2. Absent under contract 1,
+            where every request is a ReportSubmission.
+          example: "ReportSubmission"
         report_metadata:
           $ref: '#/components/schemas/ReportMetadata'
         client_information:
@@ -313,15 +350,18 @@ components:
           type: object
           description: |
             When VMI transmits via SFTP or S3 in addition to this webhook,
-            this object maps each transmission method to the filename of the companion
+            this object maps each transmission method to the remote path of the companion
             file delivered on that channel. Keys correspond to the transmission method
             (one or more of `sftp`, `encrypted_s3`, `unencrypted_s3`); values are full
-            filenames including extension. Methods that
+            remote paths (SFTP path or S3 object key) including extension. Methods that
             produce no file (e.g. `webhook`, `shared_email`, `json`) are also omitted.
+            Under contract 2, a TransmissionComplete event with the same value in
+            `uri` is sent once the file has been delivered.
           additionalProperties:
             type: string
-            description: Full filename including extension.
-            maxLength: 100
+            description: |
+              Remote path including extension. The filename portion is at most
+              100 characters.
           example:
             sftp: "CBVPilot_00012345_20260513_ConfCONF0001.pdf"
             encrypted_s3: "CBVPilot_00012345_20260513_ConfCONF0001.tar.gz.gpg"
@@ -726,11 +766,59 @@ components:
           description: Payment amount in dollars.
           example: 340.25
 
+    TransmissionCompleteEvent:
+      type: object
+      description: |
+        Contract 2 only. Sent once per non-webhook transmission method after that
+        method's delivery has finished. Events are delivered independently (a
+        TransmissionComplete can arrive before its ReportSubmission) and may be
+        delivered more than once, so correlate on confirmation_code and process
+        idempotently.
+      required:
+        - event_type
+        - confirmation_code
+        - transmission_method
+        - uri
+        - completed_at
+      properties:
+        event_type:
+          type: string
+          enum: [TransmissionComplete]
+          example: "TransmissionComplete"
+        confirmation_code:
+          type: string
+          description: |
+            Matches report_metadata.confirmation_code in the ReportSubmission for
+            the same submission, and the X-VMI-Confirmation-Code header.
+          example: "CONF0001"
+        transmission_method:
+          type: string
+          description: |
+            The method that finished delivering. Known values: `sftp`,
+            `encrypted_s3`, `unencrypted_s3`, `shared_email`, `json`. Accept
+            values you don't recognize.
+          example: "sftp"
+        uri:
+          type: string
+          nullable: true
+          description: |
+            The same value as report_metadata.filenames[transmission_method] in
+            the ReportSubmission. Null for methods that don't produce a file
+            (`shared_email`, `json`).
+          example: "CBVPilot_00012345_20260513_ConfCONF0001.pdf"
+        completed_at:
+          type: string
+          format: date-time
+          description: When the delivery finished (YYYY-MM-DDTHH:MM:SSZ).
+          example: "2026-05-13T18:04:11Z"
+
     SuccessResponse:
       type: object
       properties:
         status:
           type: string
+          enum: [success, ignored]
+          description: "`ignored` when the event_type was not recognized."
           example: "success"
         message:
           type: string
