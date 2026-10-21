@@ -10,6 +10,7 @@
 | 5/15/2026 | Add optional filenames object to report_metadata to identify companion files transmitted via SFTP or S3 |
 | 6/12/2026 | Add optional top-level paystub_images_included flag indicating whether the companion pay stub images file contains any pay stub images |
 | 10/15/2026 | Add webhook contract version 2: top-level `event_type`, new `TransmissionComplete` event, and authentication by `X-VMI-Signature` only (`X-VMI-API-Key` deprecated) |
+| 10/21/2026 | Clarify that `filenames` values (and `TransmissionComplete` `uri`) are remote paths and document the `VMI_` prefix; state that `X-VMI-Confirmation-Code` equals the body's confirmation code; explain how contract versions relate to the API version; reject stale timestamps with 401; document `client_information.additional_jobs_to_report` (nullable boolean) and that unfilled `client_information` fields are sent as `null` |
 
 # Introduction
 
@@ -52,6 +53,8 @@ Major Changes: (e.g. removing required fields or changing data types) will resul
 
 Partners are expected to build "flexible" parsers that do not fail when encountering new, unrecognized JSON keys.
 
+Webhook contract versions (below) are separate from the API version. A contract version is a per-partner setting that VMI changes only once the partner is ready, so moving to contract 2 is not a breaking change for anyone and both contracts use the `/v1/` endpoint.
+
 ### Webhook Contract Versions
 
 VMI configures each partner's webhook with a contract version. Both versions use the same endpoint and the same request signing.
@@ -86,7 +89,7 @@ The following headers are required for every transmission to ensure security and
 | --- | --- |
 | `X-VMI-Timestamp` | Seconds since the Unix epoch (used to verify the request signature). |
 | `X-VMI-Signature` | Calculated signature based on the request body. |
-| `X-VMI-Confirmation-Code` | Unique confirmation code of the submitted record (e.g., "LALDH00100001"). |
+| `X-VMI-Confirmation-Code` | Unique confirmation code of the submitted record (e.g., "LALDH00100001"). Always equal to the body's confirmation code: `report_metadata.confirmation_code` in a ReportSubmission, `confirmation_code` in a TransmissionComplete. |
 | `X-VMI-API-Key` | **Contract 1 only (deprecated).** The partner's API key. Not sent under contract 2. Do not authenticate with it; verify `X-VMI-Signature` instead. |
 | `Content-Type` | Must be `application/json`. |
 | `Content-Length` | Number of bytes in the body.  |
@@ -101,7 +104,7 @@ Additional headers used for authentication may be requested by the partner.
 2. Compute HMAC-SHA512 (hex) of the `X-VMI-Timestamp` header value, a `:`, and the raw body, using the API key as the secret.
 3. Compare the result to `X-VMI-Signature` with a constant-time comparison. If they differ, respond `401`.
 
-Recommended: also reject requests whose `X-VMI-Timestamp` is more than 5 minutes from the receiver's current time. VMI signs every delivery attempt, including retries, at send time.
+Recommended: also reject (with `401`) requests whose `X-VMI-Timestamp` is more than 5 minutes from the receiver's current time, so a captured request can't be replayed later. VMI signs every delivery attempt, including retries, at send time.
 
 ### Request Body: ReportSubmission
 
@@ -111,7 +114,7 @@ The request body contains the income data. This payload is formatted as a JSON o
 
     | **Field Name** | **Type** | **Nullable?** | **Description** |
     | --- | --- | --- | --- |
-    | `event_type` | Enum | No | Contract 2: `ReportSubmission` for this payload (see **TransmissionComplete Event** for the other value). Absent under contract 1, where every request is a ReportSubmission. Receivers should respond 2xx to, and ignore, values they don't recognize. |
+    | `event_type` | Enum | No (contract 2); absent (contract 1) | Contract 2: `ReportSubmission` for this payload (see **TransmissionComplete Event** for the other value). Absent under contract 1, where every request is a ReportSubmission. Receivers should respond 2xx to, and ignore, values they don't recognize. |
 
 **Data Types**
 
@@ -130,23 +133,31 @@ The request body contains the income data. This payload is formatted as a JSON o
     |   ├ `start_date` | Date | No | Earliest date of review period  |
     |   └  `end_date` | Date | No | Last date of review period  |
     | `consent_timestamp_utc` | DateTime | No | Date and time when client provided legal consent for data retrieval. |
-    | `filenames` | Object | Yes | Optional map of transmission method to companion-file filename. Present when VMI delivers files via SFTP or S3 in addition to this webhook; absent or empty otherwise. See **Filenames** below. |
+    | `filenames` | Object | Yes | Optional map of transmission method to the remote path of the companion file. Present when VMI delivers files via SFTP or S3 in addition to this webhook; absent or empty otherwise. See **Filenames** below. |
 
 - **Filenames** (object) — optional
 
-    Maps each non-webhook transmission method that the sending agency has configured to the full filename of the companion file delivered on that channel. Receivers can use this to join this webhook payload to the file(s) received on the SFTP / S3 channel(s). The file may not have arrived yet when the ReportSubmission is received; under contract 2, a `TransmissionComplete` event with the same value in `uri` is sent once it has.
+    Maps each non-webhook transmission method that the sending agency has configured to the remote path of the companion file delivered on that channel: the SFTP path or S3 object key, i.e. the directory configured for that method (if any), then `/`, then the filename. Receivers can use this to join this webhook payload to the file(s) received on the SFTP / S3 channel(s). The file may not have arrived yet when the ReportSubmission is received; under contract 2, a `TransmissionComplete` event with the same value in `uri` is sent once it has.
 
     | **Field Name** | **Type** | **Nullable?** | **Description** |
     | --- | --- | --- | --- |
-    | `sftp` | String | Yes | Filename of the PDF delivered via SFTP, e.g. `CBVPilot_00012345_20260513_ConfABC123.pdf`. Present only when SFTP transmission is configured. |
-    | `encrypted_s3` | String | Yes | Filename of the encrypted tarball delivered to S3, e.g. `CBVPilot_00012345_20260513_ConfABC123.tar.gz.gpg`. Present only when encrypted-S3 transmission is configured. |
-    | `unencrypted_s3` | String | Yes | Filename of the unencrypted tarball delivered to S3, e.g. `CBVPilot_00012345_20260513_ConfABC123.tar.gz`. Present only when unencrypted-S3 transmission is configured. |
+    | `sftp` | String | Yes | SFTP path of the PDF, e.g. `inbox/VMI_00012345_20260513_ConfABC123.pdf`. Present only when SFTP transmission is configured. |
+    | `encrypted_s3` | String | Yes | S3 object key of the encrypted tarball, e.g. `VMI_00012345_20260513_ConfABC123.tar.gz.gpg`. Present only when encrypted-S3 transmission is configured. |
+    | `unencrypted_s3` | String | Yes | S3 object key of the unencrypted tarball, e.g. `VMI_00012345_20260513_ConfABC123.tar.gz`. Present only when unencrypted-S3 transmission is configured. |
 
-    Filename format: `CBVPilot_<8-char padded partner_identifier>_<YYYYMMDD in agency tz>_Conf<confirmation_code>.<ext>`, with each value ≤ 100 characters. The key `webhook` will never appear (the dict points at companion files, not at this payload itself); methods that produce no file (e.g. `shared_email`, `json`) are also omitted. Partners should treat unknown keys as a no-op (per the flexible-parser guidance above).
+    Value format: `[<directory>/]<prefix>_<8-char padded partner_identifier>_<YYYYMMDD in agency tz>_Conf<confirmation_code>.<ext>`. `<prefix>` is `VMI` (`CBVPilot` for some early partners, as in the sample payload). The directory is present only when one is configured for that method. The filename portion is ≤ 100 characters; the directory is not counted. The key `webhook` will never appear (the dict points at companion files, not at this payload itself); methods that produce no file (e.g. `shared_email`, `json`) are also omitted. Partners should treat unknown keys as a no-op (per the flexible-parser guidance above).
 
 - **Client Information** (object) - Varies by partner
     
     This object contains unique identifying information to link the report to the correct record in the partner’s eligibility database. These fields (e.g. `case_number`, `last_name`) will be agreed upon with each partner. 
+
+    Every agreed field is always present. A field the applicant or caseworker didn't fill in (e.g. an optional one) is sent as `null`, not left out, so receivers should accept `null` for any optional field.
+
+    VMI also adds this field for every partner:
+
+    | **Field Name** | **Type** | **Nullable?** | **Description** |
+    | --- | --- | --- | --- |
+    | `additional_jobs_to_report` | Boolean | Yes | The applicant's answer to whether they have other jobs to report that aren't included in this report. `null` when the applicant wasn't asked (based on partner config). Always present. |
     
 - **Employment Records** (array)
     
@@ -489,8 +500,8 @@ VMI relies on semantic HTTP status codes to determine if the data was correctly 
 | --- | --- | --- |
 | **200 OK** | The data was successfully received and ingested. | Mark successful. |
 |  |  |  |
-| **400 Bad Request** | The data in the body is malformed or fails schema validation. | Send to error queue. |
-| **401 Unauthorized** | X-VMI-Signature verification failed, or a required header is missing. | Attempt retry. |
+| **400 Bad Request** | The data in the body is malformed or fails schema validation, or the body's confirmation code doesn't match `X-VMI-Confirmation-Code`. | Send to error queue. |
+| **401 Unauthorized** | X-VMI-Signature verification failed, a required header is missing, or `X-VMI-Timestamp` is too far from the receiver's clock. | Attempt retry. |
 | **413 Payload Too Large** | Content-Length exceeds partner server size limit. | Send to error queue. |
 | **422 Unprocessable Entity** |  | Send to error queue. |
 | **429 Too Many Requests** | Rate of requests is exceeding partner server limits. | Attempt retry. |

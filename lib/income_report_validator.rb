@@ -73,6 +73,13 @@ class IncomeReportValidator
     client = @payload["client_information"]
     unless client.is_a?(Hash)
       add_error("client_information", "This field is required and must be an object.")
+      return
+    end
+
+    # the other fields vary by partner; VMI adds this one for everyone, and it is
+    # null when the applicant wasn't asked
+    unless [ true, false, nil ].include?(client["additional_jobs_to_report"])
+      add_error("client_information.additional_jobs_to_report", "Must be a boolean or null.")
     end
   end
 

@@ -67,7 +67,8 @@ Environment variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VMI_API_KEY` | `abc123_example_key` | The shared secret used to verify `X-VMI-Signature` |
-| `PAYLOAD_DIR` | *(unset)* | When set, accepted payloads are saved as JSON files to this directory (e.g. `/data/payloads`). A ReportSubmission is saved as `{timestamp}_{confirmation_code}.json`; a TransmissionComplete as `{timestamp}_{confirmation_code}_TransmissionComplete_{transmission_method}.json`. |
+| `TIMESTAMP_TOLERANCE_SECONDS` | `300` | Requests whose `X-VMI-Timestamp` is further than this from the server's clock (either direction) are rejected with `401`, so captured requests can't be replayed. `0` turns the check off. |
+| `PAYLOAD_DIR` | *(unset)* | When set, accepted payloads are saved as JSON files to this directory (e.g. `/data/payloads`). A ReportSubmission is saved as `{timestamp}_{confirmation_code}.json`; a TransmissionComplete as `{timestamp}_{confirmation_code}_TransmissionComplete_{transmission_method}.json`. Characters other than letters, digits, `_` and `-` in those request values are replaced with `_`, so a file can't be written outside this directory. |
 
 Signature verification is always on: it is the only authentication. (Earlier versions always compared the `X-VMI-API-Key` header and verified signatures only when `VERIFY_SIGNATURE=true`. Both behaviors are gone, and `VERIFY_SIGNATURE` is no longer read.)
 
@@ -124,14 +125,16 @@ HMAC-SHA512(key: api_key, message: "<timestamp>:<request_body>")
 
 This matches the signing logic in the VMI platform (`JsonApiSignature`).
 
+After the signature check, the server also rejects a request whose `X-VMI-Timestamp` is more than `TIMESTAMP_TOLERANCE_SECONDS` (default 5 minutes) from its own clock. VMI signs each delivery attempt, retries included, when it sends it, so this doesn't affect legitimate retries.
+
 ## Validation
 
 A `TransmissionComplete` must have a non-empty `confirmation_code` and `transmission_method` (any string; known values are `sftp`, `encrypted_s3`, `unencrypted_s3`, `shared_email`, `json`), a `uri` key holding a string or `null`, and a `completed_at` datetime.
 
 For a ReportSubmission, the server validates the full payload structure per the spec:
 
-- **Report Metadata** — `confirmation_code`, `report_date_range` (start/end dates), `consent_timestamp_utc`, optional `filenames` map of transmission method (`sftp`, `encrypted_s3`, `unencrypted_s3`) → companion filename
-- **Client Information** — must be an object (fields vary by partner)
+- **Report Metadata** — `confirmation_code`, `report_date_range` (start/end dates), `consent_timestamp_utc`, optional `filenames` map of transmission method (`sftp`, `encrypted_s3`, `unencrypted_s3`) → remote path of the companion file
+- **Client Information** — must be an object (fields vary by partner, and any that weren't filled in arrive as `null`); `additional_jobs_to_report`, which VMI adds for every partner, must be a boolean or `null` (`null` when the applicant wasn't asked)
 - **Employment Records** — array of W2 or GIG records, each validated for:
   - `employment_type` enum (`W2`, `GIG`)
   - `employment_status` enum (`EMPLOYED`, `ACTIVE`, `INACTIVE`, `TERMINATED`)
@@ -146,13 +149,21 @@ For a ReportSubmission, the server validates the full payload structure per the 
 
 Date fields must be `YYYY-MM-DD`, datetimes must be `YYYY-MM-DDTHH:MM:SSZ`.
 
+For both events, the body's confirmation code (`report_metadata.confirmation_code` or `confirmation_code`) must equal the `X-VMI-Confirmation-Code` header; otherwise the request is rejected with `400`.
+
+## Duplicate Deliveries
+
+VMI may deliver an event more than once, for example when it retries after a `2xx` response was lost. The server remembers the events it has processed, keyed on `confirmation_code` for a ReportSubmission and on `confirmation_code` + `transmission_method` for a TransmissionComplete. A repeat gets `200` with `"status": "duplicate"`, so VMI stops retrying, and is not processed (or saved to `PAYLOAD_DIR`) again. Only valid events are recorded.
+
+The keys are kept in memory (`lib/processed_events.rb`), so they are lost on restart. A production receiver should record them in its own durable store, in the same transaction as its processing.
+
 ## Response Codes
 
 | Code | Meaning |
 |------|---------|
-| 200 | Event accepted and valid (`"status": "success"`), or an unrecognized `event_type` was ignored (`"status": "ignored"`) |
-| 400 | JSON parse error (`PARSE_ERROR`) or validation failure (`VALIDATION_ERROR`) — returns field-level error details |
-| 401 | Missing headers or signature verification failure |
+| 200 | Event accepted and valid (`"status": "success"`), an unrecognized `event_type` was ignored (`"status": "ignored"`), or an event already received was acknowledged without being processed again (`"status": "duplicate"`) |
+| 400 | JSON parse error (`PARSE_ERROR`) or validation failure (`VALIDATION_ERROR`, including a body/header confirmation code mismatch) — returns field-level error details |
+| 401 | Missing headers, signature verification failure, or `X-VMI-Timestamp` outside the allowed window |
 | 404 | Unknown endpoint |
 | 405 | Method not allowed (only POST is accepted for the income report endpoint) |
 
@@ -207,6 +218,14 @@ curl -X POST http://localhost:9292/api/v1/income-report \
 
 Signatures are always verified, so every request must be signed as above.
 
+## Tests
+
+```bash
+bundle exec rake test
+```
+
+The suite in `test/` sends signed requests to the app in-process (Rack::Test) and covers authentication, the timestamp window, event routing for both contract versions, the confirmation code check, duplicate detection, `TransmissionComplete` validation, and saving payloads.
+
 ## Integration Tests
 
 The VMI Rails application (`dicit`) includes integration tests that send real HTTP requests to this reference server. These tests exercise the full webhook delivery pipeline — signing, header construction, payload serialization, and response handling — against a running instance of this server.
@@ -235,17 +254,20 @@ INTEGRATION_RUN_TESTS=1 bundle exec rspec spec/services/transmitters/webhook_tra
 ├── .dockerignore                    # Files excluded from Docker build
 ├── .ruby-version                    # Ruby version (3.4.5)
 ├── Dockerfile                       # Container image definition
-├── Gemfile                          # Dependencies (sinatra, puma, rackup)
+├── Gemfile                          # Dependencies (sinatra, puma, rackup; minitest, rack-test, rake for tests)
 ├── Gemfile.lock                     # Locked dependency versions
+├── Rakefile                         # `rake test` runs the test suite
 ├── config.ru                        # Rack entry point
 ├── app.rb                           # Sinatra application (routes, header validation)
 ├── lib/
 │   ├── income_report_validator.rb   # ReportSubmission payload validation per spec
 │   ├── transmission_complete_validator.rb  # TransmissionComplete event validation
+│   ├── processed_events.rb          # In-memory record of processed events (duplicate detection)
 │   └── signature_verifier.rb        # HMAC-SHA512 signature generation/verification
 ├── public/
 │   ├── openapi.yaml                 # OpenAPI 3.0 specification
 │   └── swagger.html                 # Swagger UI (loads from CDN)
+├── test/                            # Minitest suite (`bundle exec rake test`)
 └── Webhooks Data Transmission Spec v1.md   # Source spec document
 ```
 

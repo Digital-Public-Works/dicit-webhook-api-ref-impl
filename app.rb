@@ -4,6 +4,7 @@ require "openssl"
 require_relative "lib/income_report_validator"
 require_relative "lib/transmission_complete_validator"
 require_relative "lib/signature_verifier"
+require_relative "lib/processed_events"
 
 class WebhookAPIReference < Sinatra::Base
   REPORT_SUBMISSION = "ReportSubmission".freeze
@@ -12,6 +13,11 @@ class WebhookAPIReference < Sinatra::Base
   configure do
     # the shared secret agreed with VMI; used to verify X-VMI-Signature on every request
     set :api_key, ENV.fetch("VMI_API_KEY", "abc123_example_key")
+    # how far X-VMI-Timestamp may be from this server's clock, in seconds, before
+    # the request is rejected as a possible replay; 0 turns the check off
+    set :timestamp_tolerance, Integer(ENV.fetch("TIMESTAMP_TOLERANCE_SECONDS", "300"))
+    # events already processed, so redeliveries aren't processed twice
+    set :processed_events, ProcessedEvents.new
     set :logging, true
   end
 
@@ -58,6 +64,14 @@ class WebhookAPIReference < Sinatra::Base
     unless SignatureVerifier.verify(body, timestamp, signature, settings.api_key)
       logger.warn "Signature verification failed for timestamp=#{timestamp}"
       halt 401, error_response("AUTHENTICATION_ERROR", "Signature verification failed.")
+    end
+
+    # reject stale (or future) timestamps so a captured request can't be replayed.
+    # VMI signs every delivery attempt, retries included, at send time.
+    tolerance = settings.timestamp_tolerance
+    if tolerance.positive? && (Time.now.to_i - timestamp.to_i).abs > tolerance
+      logger.warn "Timestamp outside the allowed window: timestamp=#{timestamp} tolerance=#{tolerance}s"
+      halt 401, error_response("AUTHENTICATION_ERROR", "X-VMI-Timestamp is outside the allowed window of #{tolerance} seconds.")
     end
 
     # basic validation that the body is in fact valid JSON
@@ -118,11 +132,17 @@ class WebhookAPIReference < Sinatra::Base
     # exit out if the incoming payload is not in the expected structure
     halt_on_validation_errors(validation_errors)
 
+    confirmation_code = payload.dig("report_metadata", "confirmation_code")
+    halt_on_confirmation_code_mismatch(confirmation_code, "report_metadata.confirmation_code")
+
+    # one ReportSubmission per confirmation code
+    halt_if_already_processed([REPORT_SUBMISSION, confirmation_code], confirmation_code,
+                              "Income report already received; duplicate ignored.")
+
     # TODO: Insert your processing of this payload here
 
-    save_payload(payload, request.env["HTTP_X_VMI_CONFIRMATION_CODE"] || "unknown")
+    save_payload(payload, confirmation_code)
 
-    confirmation_code = payload.dig("report_metadata", "confirmation_code")
     record_count = payload.dig("employment_records")&.size || 0
     date_range_start = payload.dig("report_metadata", "report_date_range", "start_date")
     date_range_end = payload.dig("report_metadata", "report_date_range", "end_date")
@@ -148,14 +168,20 @@ class WebhookAPIReference < Sinatra::Base
     validation_errors = TransmissionCompleteValidator.new(payload).validate
     halt_on_validation_errors(validation_errors)
 
+    confirmation_code = payload["confirmation_code"]
+    halt_on_confirmation_code_mismatch(confirmation_code, "confirmation_code")
+
+    transmission_method = payload["transmission_method"]
+
+    # confirmation_code + transmission_method identifies a TransmissionComplete
+    halt_if_already_processed([TRANSMISSION_COMPLETE, confirmation_code, transmission_method], confirmation_code,
+                              "Transmission complete event already received; duplicate ignored.")
+
     # TODO: Insert your processing of this event here, e.g. fetch the file at
     # `uri` from the SFTP server or S3 bucket now that it has been delivered.
-    # Events can arrive before the matching ReportSubmission and may be
-    # delivered more than once, so correlate on confirmation_code and make this
-    # processing idempotent.
+    # Events can arrive before the matching ReportSubmission, so correlate on
+    # confirmation_code.
 
-    confirmation_code = payload["confirmation_code"]
-    transmission_method = payload["transmission_method"]
     save_payload(payload, "#{confirmation_code}_#{TRANSMISSION_COMPLETE}_#{transmission_method}")
 
     logger.info "Transmission complete accepted: confirmation_code=#{confirmation_code} " \
@@ -178,6 +204,31 @@ class WebhookAPIReference < Sinatra::Base
     halt 400, error_response("VALIDATION_ERROR", "The request was well-formed but contains errors.", validation_errors)
   end
 
+  # X-VMI-Confirmation-Code is always the body's confirmation code; a mismatch
+  # means the request was built wrong, so don't file it under either code.
+  def halt_on_confirmation_code_mismatch(body_code, field)
+    header_code = request.env["HTTP_X_VMI_CONFIRMATION_CODE"]
+    return if body_code == header_code
+
+    halt_on_validation_errors([
+      { field: field, reason: "Must match the X-VMI-Confirmation-Code header." }
+    ])
+  end
+
+  # VMI may deliver an event more than once (e.g. a retry after our 2xx was
+  # lost). Acknowledge a repeat with 200, so VMI stops retrying, but don't
+  # process it again.
+  def halt_if_already_processed(key, confirmation_code, message)
+    return if settings.processed_events.first_time?(key)
+
+    logger.info "Duplicate event ignored: #{key.join(' ')}"
+    halt 200, {
+      status: "duplicate",
+      message: message,
+      confirmation_code: confirmation_code
+    }.to_json
+  end
+
   # Dump received payload to disk for validation/debugging
   def save_payload(payload, name)
     payload_dir = ENV["PAYLOAD_DIR"]
@@ -186,8 +237,10 @@ class WebhookAPIReference < Sinatra::Base
     require "fileutils"
     FileUtils.mkdir_p(payload_dir)
 
+    # name comes from the request, so keep it to safe characters (no "/" or "..")
+    # to make sure the file lands inside payload_dir
     timestamp = Time.now.strftime("%Y%m%dT%H%M%S")
-    filename = "#{timestamp}_#{name}.json"
+    filename = "#{timestamp}_#{name.gsub(/[^A-Za-z0-9_-]/, '_')}.json"
 
     File.write(File.join(payload_dir, filename), JSON.pretty_generate(payload))
     logger.info "Saved payload to #{payload_dir}/#{filename}"
