@@ -1,4 +1,4 @@
-# example of in memory key store to prevent duplicates. A real receiver should records the key
+# example of in memory key store to prevent duplicates. A real receiver should record the key
 # in a durable store to prevent dupes.
 class ProcessedEvents
   def initialize
