@@ -7,7 +7,28 @@ info:
 
     The partner must build this API endpoint and ensure that data is ingested
     into the correct case within the eligibility management system.
-  version: "1.0.0"
+
+    VMI sends two event types to the endpoint: `ReportSubmission` (the income
+    report) and `TransmissionComplete` (a file delivered by another
+    transmission method, such as SFTP or S3, has arrived).
+
+    Each partner's webhook is configured with a contract version:
+    - **Contract 1 (legacy):** the body has no `event_type` (every request is a
+      ReportSubmission), VMI also sends the deprecated `X-VMI-API-Key` header,
+      and no TransmissionComplete events are sent.
+    - **Contract 2:** the body has a top-level `event_type`, the API key is
+      never sent, and TransmissionComplete events are sent.
+
+    Under both contracts, authenticate every request by verifying
+    `X-VMI-Signature`: the hex HMAC-SHA512 of `<X-VMI-Timestamp>:<raw body>`,
+    keyed with the partner's API key, compared in constant time, and reject
+    requests whose `X-VMI-Timestamp` is more than 5 minutes from the
+    receiver's clock.
+
+    The contract version is a per-partner setting, not an API version: both
+    contracts use this same `/api/v1/` endpoint, and a partner moves to
+    contract 2 only when they are ready, so this remains API version 1.
+  version: "1.1.0"
   contact:
     name: VMI Team
 
@@ -17,19 +38,23 @@ servers:
 paths:
   /api/v1/income-report:
     post:
-      summary: Receive income report
+      summary: Receive webhook events
       description: |
-        Receives an income report as structured JSON data. Partners are expected
-        to build "flexible" parsers that do not fail when encountering new,
+        Receives webhook events as structured JSON data: a `ReportSubmission`
+        (the income report) or a `TransmissionComplete`. A request with no
+        `event_type` is a contract 1 ReportSubmission. Respond 2xx to, and
+        ignore, an `event_type` you don't recognize. Partners are expected to
+        build "flexible" parsers that do not fail when encountering new,
         unrecognized JSON keys.
       operationId: receiveIncomeReport
-      security:
-        - apiKey: []
       parameters:
         - name: X-VMI-Timestamp
           in: header
           required: true
-          description: Seconds since the Unix epoch (used to verify the request signature).
+          description: |
+            Seconds since the Unix epoch (used to verify the request signature).
+            Reject requests more than 5 minutes from the receiver's clock; VMI
+            signs every delivery attempt, including retries, at send time.
           schema:
             type: string
             pattern: '^\d+$'
@@ -37,21 +62,30 @@ paths:
         - name: X-VMI-Signature
           in: header
           required: true
-          description: HMAC-SHA512 signature calculated from `timestamp:body` using the API key.
+          description: |
+            Hex HMAC-SHA512 of `<X-VMI-Timestamp>:<raw body>`, keyed with the
+            partner's API key. Verify it on every request.
           schema:
             type: string
             example: "77cdb11cfad51afd5b5d5eb8aa1b7735b1578202e479bf82eb36d38ac32c1f0263761fdc9c962e78a367d7e6bc841c8dbc97dcc5dc384cf0c4e36fe3ea3ec5e7"
         - name: X-VMI-Confirmation-Code
           in: header
           required: true
-          description: Unique confirmation code of the submitted record.
+          description: |
+            Unique confirmation code of the submitted record. Always equal to the
+            body's confirmation code (`report_metadata.confirmation_code` for a
+            ReportSubmission, `confirmation_code` for a TransmissionComplete).
           schema:
             type: string
             example: "CONF0001"
         - name: X-VMI-API-Key
           in: header
-          required: true
-          description: Unique secure GUID provided by the partner.
+          required: false
+          deprecated: true
+          description: |
+            (Deprecated) Contract 1 only. The partner's API key, sent in the clear. Not sent
+            under contract 2. Do not authenticate with it; verify
+            `X-VMI-Signature` instead.
           schema:
             type: string
             example: "abc123_example_key"
@@ -60,136 +94,174 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IncomeReport'
-            example:
-              report_metadata:
-                confirmation_code: "CONF0001"
-                filenames:
-                  sftp: "CBVPilot_00012345_20260513_ConfCONF0001.pdf"
-                  encrypted_s3: "CBVPilot_00012345_20260513_ConfCONF0001.tar.gz.gpg"
-                  unencrypted_s3: "CBVPilot_00012345_20260513_ConfCONF0001.tar.gz"
-                report_date_range:
-                  start_date: "2025-11-01"
-                  end_date: "2026-02-01"
-                consent_timestamp_utc: "2026-02-01T10:30:00Z"
-              client_information:
-                case_number: "CASE-998877"
-                first_name: "Elena"
-                last_name: "Thompson"
-                date_of_birth: "1992-11-20"
-                additional_jobs_to_report: true
-              employment_records:
-                - employment_type: "W2"
-                  employer_information:
-                    employer_name: "General Hospital Systems"
-                    employer_phone: "312-555-0456"
-                    employer_address:
-                      line1: "710 N Fairbanks Ct"
-                      line2: "Floor 4"
-                      city: "Chicago"
-                      state: "IL"
-                      postal_code: "60611"
-                      country: "United States"
-                  employment_status: "EMPLOYED"
-                  employment_start_date: "2025-12-29"
-                  employment_end_date: null
-                  employee_information:
-                    full_name: "Elena Thompson"
-                    ssn: "XXX-XX-4455"
-                  pay_frequency: "BIWEEKLY"
-                  base_compensation:
-                    rate: 32.50
-                    interval: "HOURLY"
-                  w2_monthly_summaries:
-                    - month: 1
-                      year: "2026"
-                      total_hours: 160.0
-                      number_of_paychecks: 2
-                      gross_income: 5200.00
-                      partial_month: false
-                      partial_month_start: null
-                      partial_month_end: null
-                  w2_payments:
-                    - pay_date: "2026-01-09"
-                      pay_period:
-                        start: "2025-12-29"
-                        end: "2026-01-04"
-                      gross_pay: 2600.00
-                      net_pay: 1950.40
-                      hours_worked: 80.0
-                      base_hours_paid: 80.0
-                      gross_pay_ytd: 2600.00
-                      gross_pay_line_items:
-                        - name: "Regular"
-                          amount: 2600.00
-                      deductions:
-                        - name: "Medical"
-                          type: "PRETAX"
-                          amount: 120.00
-                        - name: "401k"
-                          type: "PRETAX"
-                          amount: 260.00
-                      direct_deposit_accounts:
-                        - "1234"
-                        - "4567"
-                      payout_card_accounts:
-                        - "8910"
-                  gig_monthly_summaries: null
-                  gig_payments: null
-                - employment_type: "GIG"
-                  employer_information:
-                    employer_name: "DoorDash"
-                    employer_phone: null
-                    employer_address:
-                      line1: "303 2nd St"
-                      line2: "South Tower"
-                      city: "San Francisco"
-                      state: "CA"
-                      postal_code: "94107"
-                      country: "United States"
-                  employment_status: "ACTIVE"
-                  employment_start_date: "2025-05-20"
-                  employment_end_date: null
-                  employee_information:
-                    full_name: "Elena Thompson"
-                    ssn: "XXX-XX-4455"
-                  pay_frequency: "VARIABLE"
-                  base_compensation: null
-                  gig_monthly_summaries:
-                    - month: 12
-                      year: "2025"
-                      total_hours: 128.50
-                      gross_earnings: 1336.45
-                      mileage_expenses:
-                        - rate: 70.0
-                          miles: 942
-                    - month: 1
-                      year: "2026"
-                      total_hours: 45.20
-                      gross_earnings: 620.75
-                      mileage_expenses:
-                        - rate: 72.5
-                          miles: 310.4
-                  gig_payments:
-                    - pay_date: "2026-01-26"
-                      amount: 340.25
-                    - pay_date: "2026-01-19"
-                      amount: 280.50
-                  w2_monthly_summaries: null
-                  w2_payments: null
+              # Exactly one branch matches, selected by event_type: absent or
+              # ReportSubmission, TransmissionComplete, or any other value.
+              oneOf:
+                - $ref: '#/components/schemas/IncomeReport'
+                - $ref: '#/components/schemas/TransmissionCompleteEvent'
+                - $ref: '#/components/schemas/UnrecognizedEvent'
+            examples:
+              reportSubmission:
+                summary: ReportSubmission (contract 2; under contract 1 there is no event_type)
+                value:
+                  event_type: "ReportSubmission"
+                  report_metadata:
+                    confirmation_code: "CONF0001"
+                    filenames:
+                      sftp: "CBVPilot_00012345_20260513_ConfCONF0001.pdf"
+                      encrypted_s3: "CBVPilot_00012345_20260513_ConfCONF0001.tar.gz.gpg"
+                      unencrypted_s3: "CBVPilot_00012345_20260513_ConfCONF0001.tar.gz"
+                    report_date_range:
+                      start_date: "2025-11-01"
+                      end_date: "2026-02-01"
+                    consent_timestamp_utc: "2026-02-01T10:30:00Z"
+                  client_information:
+                    case_number: "CASE-998877"
+                    first_name: "Elena"
+                    last_name: "Thompson"
+                    date_of_birth: "1992-11-20"
+                    additional_jobs_to_report: true
+                  employment_records:
+                    - employment_type: "W2"
+                      employer_information:
+                        employer_name: "General Hospital Systems"
+                        employer_phone: "312-555-0456"
+                        employer_address:
+                          line1: "710 N Fairbanks Ct"
+                          line2: "Floor 4"
+                          city: "Chicago"
+                          state: "IL"
+                          postal_code: "60611"
+                          country: "United States"
+                      employment_status: "EMPLOYED"
+                      employment_start_date: "2025-12-29"
+                      employment_end_date: null
+                      employee_information:
+                        full_name: "Elena Thompson"
+                        ssn: "XXX-XX-4455"
+                      pay_frequency: "BIWEEKLY"
+                      base_compensation:
+                        rate: 32.50
+                        interval: "HOURLY"
+                      w2_monthly_summaries:
+                        - month: 1
+                          year: "2026"
+                          total_hours: 160.0
+                          number_of_paychecks: 2
+                          gross_income: 5200.00
+                          partial_month: false
+                          partial_month_start: null
+                          partial_month_end: null
+                      w2_payments:
+                        - pay_date: "2026-01-09"
+                          pay_period:
+                            start: "2025-12-29"
+                            end: "2026-01-04"
+                          gross_pay: 2600.00
+                          net_pay: 1950.40
+                          hours_worked: 80.0
+                          base_hours_paid: 80.0
+                          gross_pay_ytd: 2600.00
+                          gross_pay_line_items:
+                            - name: "Regular"
+                              amount: 2600.00
+                          deductions:
+                            - name: "Medical"
+                              type: "PRETAX"
+                              amount: 120.00
+                            - name: "401k"
+                              type: "PRETAX"
+                              amount: 260.00
+                          direct_deposit_accounts:
+                            - "1234"
+                            - "4567"
+                          payout_card_accounts:
+                            - "8910"
+                      gig_monthly_summaries: null
+                      gig_payments: null
+                    - employment_type: "GIG"
+                      employer_information:
+                        employer_name: "DoorDash"
+                        employer_phone: null
+                        employer_address:
+                          line1: "303 2nd St"
+                          line2: "South Tower"
+                          city: "San Francisco"
+                          state: "CA"
+                          postal_code: "94107"
+                          country: "United States"
+                      employment_status: "ACTIVE"
+                      employment_start_date: "2025-05-20"
+                      employment_end_date: null
+                      employee_information:
+                        full_name: "Elena Thompson"
+                        ssn: "XXX-XX-4455"
+                      pay_frequency: "VARIABLE"
+                      base_compensation: null
+                      gig_monthly_summaries:
+                        - month: 12
+                          year: "2025"
+                          total_hours: 128.50
+                          gross_earnings: 1336.45
+                          mileage_expenses:
+                            - rate: 70.0
+                              miles: 942
+                        - month: 1
+                          year: "2026"
+                          total_hours: 45.20
+                          gross_earnings: 620.75
+                          mileage_expenses:
+                            - rate: 72.5
+                              miles: 310.4
+                      gig_payments:
+                        - pay_date: "2026-01-26"
+                          amount: 340.25
+                        - pay_date: "2026-01-19"
+                          amount: 280.50
+                      w2_monthly_summaries: null
+                      w2_payments: null
+                  paystub_images_included: true
+              transmissionComplete:
+                summary: TransmissionComplete (contract 2 only)
+                value:
+                  event_type: "TransmissionComplete"
+                  confirmation_code: "CONF0001"
+                  transmission_method: "sftp"
+                  uri: "inbox/CBVPilot_00012345_20260513_ConfCONF0001.pdf"
+                  completed_at: "2026-05-13T18:04:11Z"
       responses:
         '200':
-          description: Income report received successfully.
+          description: |
+            Event received, an unrecognized event_type was ignored, or a
+            redelivered event was acknowledged without being processed again.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
-              example:
-                status: "success"
-                message: "Income report received successfully."
-                confirmation_code: "CONF0001"
+              examples:
+                reportSubmission:
+                  value:
+                    status: "success"
+                    message: "Income report received successfully."
+                    confirmation_code: "CONF0001"
+                transmissionComplete:
+                  value:
+                    status: "success"
+                    message: "Transmission complete event received successfully."
+                    confirmation_code: "CONF0001"
+                ignored:
+                  value:
+                    status: "ignored"
+                    message: "Unrecognized event_type 'SomethingNew' was ignored."
+                duplicate:
+                  value:
+                    status: "duplicate"
+                    message: "Transmission complete event already received; duplicate ignored."
+                    confirmation_code: "CONF0001"
         '400':
-          description: Malformed request body or schema validation failure.
+          description: |
+            Malformed request body, schema validation failure, or a body
+            confirmation code that does not match `X-VMI-Confirmation-Code`.
           content:
             application/json:
               schema:
@@ -203,14 +275,16 @@ paths:
                   - field: "case_number"
                     reason: "This field is required."
         '401':
-          description: Authentication or signature verification failed.
+          description: |
+            Signature verification failed, a required header is missing, or
+            `X-VMI-Timestamp` is outside the allowed clock skew.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error_code: "AUTHENTICATION_ERROR"
-                message: "Invalid API key."
+                message: "Signature verification failed."
         '413':
           description: Content-Length exceeds partner server size limit.
           content:
@@ -249,21 +323,22 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
 components:
-  securitySchemes:
-    apiKey:
-      type: apiKey
-      in: header
-      name: X-VMI-API-Key
-      description: Unique secure GUID provided by the partner.
-
   schemas:
     IncomeReport:
       type: object
+      description: A ReportSubmission event.
       required:
         - report_metadata
         - client_information
         - employment_records
       properties:
+        event_type:
+          type: string
+          enum: [ReportSubmission]
+          description: |
+            Always `ReportSubmission` under contract 2. Absent under contract 1,
+            where every request is a ReportSubmission.
+          example: "ReportSubmission"
         report_metadata:
           $ref: '#/components/schemas/ReportMetadata'
         client_information:
@@ -272,6 +347,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EmploymentRecord'
+        paystub_images_included:
+          type: boolean
+          default: false
+          description: |
+            Indicates whether a companion pay stub images file has been
+            delivered with at least one actual pay stub image. False when the
+            partner does not have pay stub images enabled.
+          example: true
 
     ReportMetadata:
       type: object
@@ -309,15 +392,22 @@ components:
           type: object
           description: |
             When VMI transmits via SFTP or S3 in addition to this webhook,
-            this object maps each transmission method to the filename of the companion
+            this object maps each transmission method to the remote path of the companion
             file delivered on that channel. Keys correspond to the transmission method
             (one or more of `sftp`, `encrypted_s3`, `unencrypted_s3`); values are full
-            filenames including extension. Methods that
-            produce no file (e.g. `webhook`, `shared_email`, `json`) are also omitted.
+            remote paths (SFTP path or S3 object key) including extension: the
+            partner's configured directory for that method, if any, then `/`, then
+            the filename. Methods that produce no file (e.g. `webhook`,
+            `shared_email`, `json`) are omitted.
+            Under contract 2, a TransmissionComplete event with the same value in
+            `uri` is sent once the file has been delivered.
           additionalProperties:
             type: string
-            description: Full filename including extension.
-            maxLength: 100
+            description: |
+              `[<directory>/]<prefix>_<8-char padded partner identifier>_<YYYYMMDD in agency timezone>_Conf<confirmation code>.<ext>`.
+              `<prefix>` is `VMI` (`CBVPilot` for some early partners). The
+              filename portion is at most 100 characters; the directory is not
+              counted.
           example:
             sftp: "CBVPilot_00012345_20260513_ConfCONF0001.pdf"
             encrypted_s3: "CBVPilot_00012345_20260513_ConfCONF0001.tar.gz.gpg"
@@ -328,12 +418,25 @@ components:
       description: |
         Contains unique identifying information to link the report to the correct
         record in the partner's eligibility database. Fields (e.g. case_number,
-        last_name) are agreed upon with each partner.
+        last_name) are agreed upon with each partner. Every agreed field is
+        always present; one that wasn't filled in (e.g. an optional field) is
+        sent as null rather than omitted.
+      properties:
+        additional_jobs_to_report:
+          type: boolean
+          nullable: true
+          description: |
+            Added by VMI for every partner, and always present. The applicant's
+            answer to whether they have other jobs to report that aren't included
+            in this report; null when the applicant wasn't asked (some partners
+            skip that question).
+          example: true
       additionalProperties: true
       example:
         case_number: "CASE-998877"
         first_name: "Elena"
         last_name: "Thompson"
+        additional_jobs_to_report: null
 
     EmploymentRecord:
       type: object
@@ -441,7 +544,9 @@ components:
           type: string
           nullable: true
           description: "Applicant SSN. Depending on whether full SSNs have been enabled, this may be masked (the default)."
-          oneOf:
+          # anyOf, not oneOf: the two patterns never both match a string, but both
+          # "match" null (patterns only apply to strings), so oneOf would reject null
+          anyOf:
             - description: "Last four digits of client SSN. Format: XXX-XX-1234"
               pattern: '^XXX-XX-\d{4}$'
               example: "XXX-XX-4455"
@@ -451,6 +556,9 @@ components:
 
     BaseCompensation:
       type: object
+      # nullable here, not only at the property: OpenAPI 3.0.3 ignores nullable
+      # next to allOf (no type), so `base_compensation: null` would otherwise be invalid
+      nullable: true
       properties:
         rate:
           type: number
@@ -466,6 +574,9 @@ components:
 
     Address:
       type: object
+      # nullable here, not only at the property: OpenAPI 3.0.3 ignores nullable
+      # next to allOf (no type), so `employer_address: null` would otherwise be invalid
+      nullable: true
       properties:
         line1:
           type: string
@@ -685,7 +796,7 @@ components:
             - "2222"
         payout_card_accounts:
           type: array
-          description: "Last 4 digits of payout (pay) card numbers. Off by default; sent as an empty array unless this field is enabled for your integration."
+          description: "Last 4 digits of payout (pay) card numbers. Off by default; sent as an empty array unless enabled for your integration (it is enabled together with direct_deposit_accounts)."
           items:
             type: string
             pattern: '^\d{4}$'
@@ -750,11 +861,77 @@ components:
           description: Payment amount in dollars.
           example: 340.25
 
+    TransmissionCompleteEvent:
+      type: object
+      description: |
+        Contract 2 only. Sent once per non-webhook transmission method after that
+        method's delivery has finished. Events are delivered independently (a
+        TransmissionComplete can arrive before its ReportSubmission) and may be
+        delivered more than once, so correlate on confirmation_code and process
+        idempotently.
+      required:
+        - event_type
+        - confirmation_code
+        - transmission_method
+        - uri
+        - completed_at
+      properties:
+        event_type:
+          type: string
+          enum: [TransmissionComplete]
+          example: "TransmissionComplete"
+        confirmation_code:
+          type: string
+          description: |
+            Matches report_metadata.confirmation_code in the ReportSubmission for
+            the same submission, and the X-VMI-Confirmation-Code header.
+          example: "CONF0001"
+        transmission_method:
+          type: string
+          description: |
+            The method that finished delivering. Known values: `sftp`,
+            `encrypted_s3`, `unencrypted_s3`, `shared_email`, `json`. Accept
+            values you don't recognize.
+          example: "sftp"
+        uri:
+          type: string
+          nullable: true
+          description: |
+            The same value as report_metadata.filenames[transmission_method] in
+            the ReportSubmission. Null for methods that don't produce a file
+            (`shared_email`, `json`).
+          example: "inbox/CBVPilot_00012345_20260513_ConfCONF0001.pdf"
+        completed_at:
+          type: string
+          format: date-time
+          description: When the delivery finished (YYYY-MM-DDTHH:MM:SSZ).
+          example: "2026-05-13T18:04:11Z"
+
+    UnrecognizedEvent:
+      type: object
+      description: |
+        An event type this receiver doesn't know about, e.g. one VMI adds in the
+        future. Respond 200 and ignore it, so new event types don't cause failed
+        (and retried) deliveries.
+      required:
+        - event_type
+      properties:
+        event_type:
+          type: string
+          not:
+            enum: [ReportSubmission, TransmissionComplete]
+          example: "SomethingNew"
+      additionalProperties: true
+
     SuccessResponse:
       type: object
       properties:
         status:
           type: string
+          enum: [success, ignored, duplicate]
+          description: |
+            `ignored` when the event_type was not recognized; `duplicate` when
+            the same event was already received (it is not processed again).
           example: "success"
         message:
           type: string

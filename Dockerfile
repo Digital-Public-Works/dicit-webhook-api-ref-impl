@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/
 WORKDIR /app
 
 COPY Gemfile Gemfile.lock ./
+ENV BUNDLE_WITHOUT=test
 RUN bundle install
 
 COPY . .

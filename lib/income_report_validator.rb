@@ -22,6 +22,7 @@ class IncomeReportValidator
     validate_report_metadata
     validate_client_information
     validate_employment_records
+    validate_paystub_images_included
     @errors
   end
 
@@ -74,6 +75,23 @@ class IncomeReportValidator
     client = @payload["client_information"]
     unless client.is_a?(Hash)
       add_error("client_information", "This field is required and must be an object.")
+      return
+    end
+
+    # the other fields vary by partner; VMI adds this one for everyone, and it is
+    # null when the applicant wasn't asked
+    unless [ true, false, nil ].include?(client["additional_jobs_to_report"])
+      add_error("client_information.additional_jobs_to_report", "Must be a boolean or null.")
+    end
+  end
+
+  # --- Paystub Images Included ---
+
+  def validate_paystub_images_included
+    return unless @payload.key?("paystub_images_included") && !@payload["paystub_images_included"].nil?
+
+    unless [ true, false ].include?(@payload["paystub_images_included"])
+      add_error("paystub_images_included", "Must be a boolean.")
     end
   end
 
