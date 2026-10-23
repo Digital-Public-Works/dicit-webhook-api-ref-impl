@@ -126,13 +126,7 @@ paths:
                       employer_information:
                         employer_name: "General Hospital Systems"
                         employer_phone: "312-555-0456"
-                        employer_address:
-                          line1: "710 N Fairbanks Ct"
-                          line2: "Floor 4"
-                          city: "Chicago"
-                          state: "IL"
-                          postal_code: "60611"
-                          country: "United States"
+                        employer_address: null
                       employment_status: "EMPLOYED"
                       employment_start_date: "2025-12-29"
                       employment_end_date: null
@@ -183,36 +177,32 @@ paths:
                       employer_information:
                         employer_name: "DoorDash"
                         employer_phone: null
-                        employer_address:
-                          line1: "303 2nd St"
-                          line2: "South Tower"
-                          city: "San Francisco"
-                          state: "CA"
-                          postal_code: "94107"
-                          country: "United States"
-                      employment_status: "ACTIVE"
+                        employer_address: null
+                      employment_status: "EMPLOYED"
                       employment_start_date: "2025-05-20"
                       employment_end_date: null
                       employee_information:
                         full_name: "Elena Thompson"
                         ssn: "XXX-XX-4455"
                       pay_frequency: "VARIABLE"
-                      base_compensation: null
+                      base_compensation:
+                        rate: null
+                        interval: null
                       gig_monthly_summaries:
                         - month: 12
                           year: "2025"
                           total_hours: 128.50
                           gross_earnings: 1336.45
                           mileage_expenses:
-                            - rate: 70.0
-                              miles: 942
+                            - miles: 942
+                              rate: 0.7
                         - month: 1
                           year: "2026"
                           total_hours: 45.20
                           gross_earnings: 620.75
                           mileage_expenses:
-                            - rate: 72.5
-                              miles: 310.4
+                            - miles: 310.4
+                              rate: 0.725
                       gig_payments:
                         - pay_date: "2026-01-26"
                           amount: 340.25
@@ -221,6 +211,9 @@ paths:
                       w2_monthly_summaries: null
                       w2_payments: null
                   paystub_images_included: true
+                  attachments:
+                    report_filename: "CBVPilot_00012345_20260513_ConfCONF0001.pdf"
+                    paystubs_filename: "CBVPilot_00012345_20260513_ConfCONF0001_paystubs.pdf"
               transmissionComplete:
                 summary: TransmissionComplete (contract 2 only)
                 value:
@@ -355,6 +348,31 @@ components:
             delivered with at least one actual pay stub image. False when the
             partner does not have pay stub images enabled.
           example: true
+        attachments:
+          $ref: '#/components/schemas/Attachments'
+
+    Attachments:
+      type: object
+      description: |
+        Present only when the partner has pay stub images enabled; omitted
+        otherwise. Names the PDFs VMI delivers by the partner's SFTP or S3
+        transmission methods: on SFTP they are written to the same directory as
+        `report_metadata.filenames.sftp`; on S3 they are inside the archive.
+        Names only, with no directory.
+      required:
+        - report_filename
+        - paystubs_filename
+      properties:
+        report_filename:
+          type: string
+          description: The income report PDF.
+          example: "VMI_00012345_20260513_ConfCONF0001.pdf"
+        paystubs_filename:
+          type: string
+          description: |
+            The pay stub images PDF. See `paystub_images_included` for whether it
+            contains any images.
+          example: "VMI_00012345_20260513_ConfCONF0001_paystubs.pdf"
 
     ReportMetadata:
       type: object
@@ -391,6 +409,7 @@ components:
         filenames:
           type: object
           description: |
+            Always present; an empty object when VMI delivers no files by SFTP or S3.
             When VMI transmits via SFTP or S3 in addition to this webhook,
             this object maps each transmission method to the remote path of the companion
             file delivered on that channel. Keys correspond to the transmission method
@@ -444,18 +463,26 @@ components:
         - employment_type
         - employer_information
         - employee_information
+        - base_compensation
       properties:
         employment_type:
           type: string
-          enum: [W2, GIG]
-          description: Type of employment.
+          enum: [W2, GIG, ""]
+          description: |
+            Type of employment. An empty string when the payroll provider
+            returned no employment details for the account; the four `w2_*` and
+            `gig_*` fields are then omitted rather than null.
         employer_information:
           $ref: '#/components/schemas/EmployerInformation'
         employment_status:
           type: string
           nullable: true
-          enum: [EMPLOYED, ACTIVE, INACTIVE, TERMINATED]
-          description: Current employment status.
+          description: |
+            The payroll provider's employment status, upper-cased. Usually
+            `EMPLOYED`, `INACTIVE` or `TERMINATED`, but other provider values are
+            passed through, so treat unrecognized values as unknown rather than
+            rejecting them.
+          example: "EMPLOYED"
         employment_start_date:
           type: string
           format: date
@@ -471,13 +498,15 @@ components:
         pay_frequency:
           type: string
           nullable: true
-          enum: [ANNUALLY, BIWEEKLY, DAILY, HOURLY, MONTHLY, QUARTERLY, SEMIMONTHLY, SEMIWEEKLY, VARIABLE, WEEKLY]
+          # null listed explicitly: strict validators apply enum before nullable
+          enum: [ANNUALLY, BIWEEKLY, DAILY, HOURLY, MONTHLY, QUARTERLY, SEMIMONTHLY, SEMIWEEKLY, VARIABLE, WEEKLY, null]
           description: How often the employee is paid. Null if the payroll aggregator does not report a pay frequency.
         base_compensation:
-          nullable: true
           allOf:
             - $ref: '#/components/schemas/BaseCompensation'
-          description: Base compensation details. Null if unavailable.
+          description: |
+            Base compensation details. Always an object; its fields are null
+            when no information is available.
         w2_monthly_summaries:
           type: array
           nullable: true
@@ -510,7 +539,10 @@ components:
       properties:
         employer_name:
           type: string
-          description: Name of the employer.
+          nullable: true
+          description: |
+            Name of the employer. Null when the payroll provider returned no
+            employment details.
           example: "General Hospital Systems"
         employer_phone:
           type: string
@@ -521,6 +553,7 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/Address'
+          description: Always null. Reserved for a future release.
 
     EmployeeInformation:
       type: object
@@ -543,22 +576,17 @@ components:
         ssn:
           type: string
           nullable: true
-          description: "Applicant SSN. Depending on whether full SSNs have been enabled, this may be masked (the default)."
-          # anyOf, not oneOf: the two patterns never both match a string, but both
-          # "match" null (patterns only apply to strings), so oneOf would reject null
-          anyOf:
-            - description: "Last four digits of client SSN. Format: XXX-XX-1234"
-              pattern: '^XXX-XX-\d{4}$'
-              example: "XXX-XX-4455"
-            - description: "Full unmasked SSN. Only emitted when specifically configured. Format: 123-45-6789"
-              pattern: '^\d{3}-\d{2}-\d{4}$'
-              example: "123-45-6789"
+          description: |
+            Applicant SSN. Masked by default: the last four digits, as
+            `XXX-XX-1234`. When full SSNs are enabled for the partner, the full
+            SSN is sent when the payroll provider makes it available, as the
+            provider returns it (usually `123-45-6789`, but the format isn't
+            guaranteed and may be just the last four digits); otherwise the
+            masked value is sent.
+          example: "XXX-XX-4455"
 
     BaseCompensation:
       type: object
-      # nullable here, not only at the property: OpenAPI 3.0.3 ignores nullable
-      # next to allOf (no type), so `base_compensation: null` would otherwise be invalid
-      nullable: true
       properties:
         rate:
           type: number
@@ -569,11 +597,15 @@ components:
         interval:
           type: string
           nullable: true
-          enum: [HOURLY, DAILY, WEEKLY, BIWEEKLY, SEMIMONTHLY, MONTHLY, ANNUAL, SALARY]
-          description: Pay interval for the base rate.
+          # null listed explicitly: strict validators apply enum before nullable
+          enum: [HOURLY, WEEKLY, MONTHLY, ANNUAL, SALARY, null]
+          description: |
+            Pay interval for the base rate. Null when the payroll provider
+            reports no unit or one VMI doesn't map.
 
     Address:
       type: object
+      description: Not currently sent (employer_address is always null); defined for a future release.
       # nullable here, not only at the property: OpenAPI 3.0.3 ignores nullable
       # next to allOf (no type), so `employer_address: null` would otherwise be invalid
       nullable: true
@@ -637,12 +669,12 @@ components:
           example: 160.0
         number_of_paychecks:
           type: integer
-          description: Number of times paid in the month within the 90-day reporting window.
+          description: Number of times paid in the month within the reporting window (90 or 182 days, per partner).
           example: 2
         gross_income:
           type: number
           format: double
-          description: Sum of incoming payment within the 90-day reporting window.
+          description: Sum of incoming payment within the reporting window (90 or 182 days, per partner).
           example: 5200.00
         partial_month:
           type: boolean
@@ -692,9 +724,10 @@ components:
           type: array
           nullable: true
           description: |
-            Mileage expenses for certain GIG employments. Verified mileage
-            expenses can be calculated to cover costs including gas, car
-            payments or leasing fees, car insurance, repairs, and maintenance.
+            Always one entry per month, holding the month's total miles and the
+            federal mileage rate for that month. Verified mileage expenses can be calculated to cover costs
+            including gas, car payments or leasing fees, car insurance, repairs,
+            and maintenance.
           items:
             $ref: '#/components/schemas/MileageExpense'
 
@@ -705,13 +738,19 @@ components:
           type: number
           format: double
           nullable: true
-          description: IRS-defined deduction rate per mile in cents.
-          example: 70.0
+          description: |
+            The IRS standard mileage rate for that month, in dollars per mile,
+            to up to three decimal places. Multiply by miles for the verified
+            mileage expense. Null for a month with no gig activity.
+          example: 0.725
         miles:
           type: number
           format: double
           nullable: true
-          description: Distance in miles.
+          description: |
+            Distance in miles. Null when the payroll provider reports none.
+            Converted from kilometers when the provider reports kilometers, and
+            not rounded.
           example: 942
 
     W2Payment:
@@ -759,13 +798,13 @@ components:
           type: number
           format: double
           nullable: true
-          description: Hours worked in the pay period.
+          description: Hours on the pay stub.
           example: 80.0
         base_hours_paid:
           type: number
           format: double
           nullable: true
-          description: Base hours paid in the pay period.
+          description: Currently the same value as hours_worked.
           example: 80.0
         gross_pay_ytd:
           type: number
@@ -784,24 +823,29 @@ components:
             $ref: '#/components/schemas/Deduction'
         direct_deposit_accounts:
           type: array
-          description: "Last 4 digits of direct deposit (ACH) account numbers. Off by default; sent as an empty array unless this field is enabled for your integration."
+          description: |
+            Last 4 digits of direct deposit (ACH) account numbers (fewer if the
+            number is shorter). Off by default; sent as an empty array unless
+            enabled for your integration, which enables payout_card_accounts too.
+            Sent only when the payroll provider makes them available; otherwise
+            empty even when enabled.
           items:
             type: string
-            pattern: '^\d{4}$'
-            minLength: 4
-            maxLength: 4
+            pattern: '^\d{1,4}$'
             example: "1111"
           example:
             - "1111"
             - "2222"
         payout_card_accounts:
           type: array
-          description: "Last 4 digits of payout (pay) card numbers. Off by default; sent as an empty array unless enabled for your integration (it is enabled together with direct_deposit_accounts)."
+          description: |
+            Last 4 digits of payout (pay) card numbers (fewer if the number is
+            shorter). Enabled together with direct_deposit_accounts, with the
+            same default, and likewise sent only when the payroll provider makes
+            them available.
           items:
             type: string
-            pattern: '^\d{4}$'
-            minLength: 4
-            maxLength: 4
+            pattern: '^\d{1,4}$'
             example: "8910"
           example:
             - "8910"
@@ -841,7 +885,8 @@ components:
         amount:
           type: number
           format: double
-          description: Dollar amount of the deduction.
+          nullable: true
+          description: Dollar amount of the deduction. Null when the payroll provider didn't report an amount.
           example: 120.00
 
     GigPayment:
@@ -853,12 +898,14 @@ components:
         pay_date:
           type: string
           format: date
-          description: Date of payment (YYYY-MM-DD).
+          nullable: true
+          description: Date of payment (YYYY-MM-DD). Null when the payroll provider didn't report the gig's end date.
           example: "2026-01-26"
         amount:
           type: number
           format: double
-          description: Payment amount in dollars.
+          nullable: true
+          description: Payment amount in dollars. Null when the payroll provider didn't report an amount.
           example: 340.25
 
     TransmissionCompleteEvent:
