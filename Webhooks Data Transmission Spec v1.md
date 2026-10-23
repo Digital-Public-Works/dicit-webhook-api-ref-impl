@@ -12,6 +12,7 @@
 | 6/12/2026 | Add optional top-level paystub_images_included flag indicating whether the companion pay stub images file contains any pay stub images |
 | 10/15/2026 | Add webhook contract version 2: top-level `event_type`, new `TransmissionComplete` event, and authentication by `X-VMI-Signature` only (`X-VMI-API-Key` deprecated) |
 | 10/21/2026 | Clarify that `filenames` values (and `TransmissionComplete` `uri`) are remote paths and document the `VMI_` prefix; state that `X-VMI-Confirmation-Code` equals the body's confirmation code; explain how contract versions relate to the API version; reject stale timestamps with 401; document `client_information.additional_jobs_to_report` (nullable boolean) and that unfilled `client_information` fields are sent as `null` |
+| 10/23/2026 | Align field definitions with what VMI sends: document `attachments`; `employer_address` is currently always `null`; `mileage_expenses[].rate` is the federal mileage rate in dollars per mile; `base_compensation` is always an object; `employment_status` is passed through from the payroll provider; `employment_type` may be empty; `employer_name`, deduction `amount` and gig payment fields may be `null`; full SSN and account numbers are sent only when the payroll provider makes them available; reporting window is 90 or 182 days; error handling table and retry logic describe what VMI does |
 
 # Introduction
 
@@ -121,7 +122,7 @@ The request body contains the income data. This payload is formatted as a JSON o
 
 - **Date:** String in `YYYY-MM-DD` format (ISO-8601).
 - **DateTime:** String in `YYYY-MM-DDTHH:MM:SSZ` format (ISO-8601 UTC).
-- **Decimal:** Number with two decimal places.
+- **Decimal:** Number. Dollar amounts and hours are rounded to two decimal places (the per-mile mileage rate to three); other values (e.g. miles) are not rounded.
 - **Enum:** A string that must match a specific set of allowed values.
 
 - **Report Metadata** (object)
@@ -134,7 +135,7 @@ The request body contains the income data. This payload is formatted as a JSON o
     |   ├ `start_date` | Date | No | Earliest date of review period  |
     |   └  `end_date` | Date | No | Last date of review period  |
     | `consent_timestamp_utc` | DateTime | No | Date and time when client provided legal consent for data retrieval. |
-    | `filenames` | Object | Yes | Optional map of transmission method to the remote path of the companion file. Present when VMI delivers files via SFTP or S3 in addition to this webhook; absent or empty otherwise. See **Filenames** below. |
+    | `filenames` | Object | Yes | Optional map of transmission method to the remote path of the companion file. Always present: lists the files VMI delivers via SFTP or S3 in addition to this webhook, and is an empty object when it delivers none. See **Filenames** below. |
 
 - **Filenames** (object) — optional
 
@@ -165,27 +166,29 @@ The request body contains the income data. This payload is formatted as a JSON o
     
     | **Field Name** | **Type** | **Nullable?** | **Description** |
     | --- | --- | --- | --- |
-    | `employment_type` | Enum | No | Must be: `W2` or `GIG` |
+    | `employment_type` | Enum | No | `W2` or `GIG`. An empty string (`""`) when the payroll provider returned no employment details for the account; the four `w2_*`/`gig_*` fields are then omitted. |
     | `employer_information` | Object | No |  |
-    |   ├ `employer_name` | String | No |  |
+    |   ├ `employer_name` | String | Yes | `null` when the payroll provider returned no employment details. |
     |   ├ `employer_phone` | String | Yes |  |
-    |   └ `employer_address` | Address (object) | Yes |  |
-    | `employment_status` | Enum | Yes | Must be:`EMPLOYED` ,`ACTIVE` ,`INACTIVE`, `TERMINATED` |
+    |   └ `employer_address` | Address (object) | Yes | Always `null`. Reserved for a future release. |
+    | `employment_status` | String | Yes | The payroll provider's employment status, upper-cased. Usually `EMPLOYED`, `INACTIVE` or `TERMINATED`, but other provider values are passed through, so treat unrecognized values as unknown rather than rejecting them. |
     | `employment_start_date` | Date | Yes |  |
     | `employment_end_date` | Date | Yes | If the client is still employed, value will be `null`. |
     | `employee_information` | Object | No |  |
     |   ├ `first_name` | String | Yes | First name of client as reported by the payroll system. |
     |   ├ `last_name` | String | Yes | Last name of client as reported by the payroll system. |
     |   ├ `full_name` | String | Yes | Full name of client as in the payroll system. |
-    |   └ `ssn` | String | Yes | Client SSN as reported by payroll system. Masked by default — last four digits only, format `XXX-XX-1234`. Partners may optionally have the full unmasked SSN enabled (format `123-45-6789`); this is off by default and requires discussion given the PII risk. |
+    |   └ `ssn` | String | Yes | Client SSN as reported by payroll system. Masked by default — last four digits only, format `XXX-XX-1234`. Partners may optionally have the full unmasked SSN enabled; this is off by default and requires discussion given the PII risk. The full SSN is available only when configured, and then only when available; other accounts in the same report still send the masked value. |
     | `pay_frequency` | Enum | Yes | Must be: `ANNUALLY`, `BIWEEKLY`, `DAILY`, `HOURLY`, `MONTHLY`, `QUARTERLY`, `SEMIMONTHLY`, `SEMIWEEKLY`, `VARIABLE`, `WEEKLY`. Null if the payroll aggregator does not report a pay frequency. |
-    | `base_compensation` | Object | Yes | If no information is available, this value is `null`. |
+    | `base_compensation` | Object | No | Always an object; its fields are `null` when no information is available. |
     |   ├ `rate` | Decimal | Yes | Wages in dollars |
-    |   └ `interval` | Enum | Yes | Must be: `HOURLY`, `DAILY`, `WEEKLY`, `BIWEEKLY`, `SEMIMONTHLY`, `MONTHLY`, `ANNUAL` , `SALARY` |
+    |   └ `interval` | Enum | Yes | Must be: `HOURLY`, `WEEKLY`, `MONTHLY`, `ANNUAL` or `SALARY`. `null` when the payroll provider reports no unit or one VMI doesn't map. |
     | `w2_monthly_summaries` | Array | Yes | If `employment_type` is `W2`, contains zero or more W2 Monthly Summary objects, otherwise `null` . |
     | `gig_monthly_summaries` | Array | Yes | If `employment_type` is `GIG`, contains zero or more Gig Monthly Summary objects, otherwise `null` . |
     | `w2_payments` | Array | Yes | If `employment_type` is `W2`, contains zero or more W2 Payment objects, otherwise `null` . |
     | `gig_payments` | Array | Yes | If `employment_type` is `GIG`, contains zero or more Gig Payment objects, otherwise `null` . |
+
+    When `employment_type` is `""`, the four `w2_*`/`gig_*` fields above are omitted rather than `null`.
 
 - **paystub_images_included** (Boolean) — top-level
 
@@ -193,8 +196,18 @@ The request body contains the income data. This payload is formatted as a JSON o
     | --- | --- | --- | --- |
     | `paystub_images_included` | Boolean | No | Top-level flag indicating whether a companion pay stub images file has been delivered with at least one actual pay stub image. `false` when the partner does not have pay stub images enabled. |
 
+- **attachments** (object) — top-level, optional
+
+    Present only when the partner has pay stub images enabled; omitted otherwise. Names the PDFs VMI delivers by the partner's SFTP or S3 transmission methods. On SFTP they are written to the same directory as `filenames.sftp`; on S3 they are inside the archive. Names only, with no directory.
+
+    | **Field Name** | **Type** | **Nullable?** | **Description** |
+    | --- | --- | --- | --- |
+    | `report_filename` | String | No | The income report PDF, e.g. `VMI_00012345_20260513_ConfABC123.pdf`. |
+    | `paystubs_filename` | String | No | The pay stub images PDF, e.g. `VMI_00012345_20260513_ConfABC123_paystubs.pdf`. See `paystub_images_included` for whether it contains any images. |
+
 - **Address (object)**
     
+    Not currently sent (`employer_address` is always `null`); defined for a future release.
     
     | **Field Name** | **Type** | **Nullable?** | **Description** |
     | --- | --- | --- | --- |
@@ -212,8 +225,8 @@ The request body contains the income data. This payload is formatted as a JSON o
     | `month` | Integer | No | Single digit representation of the month, 1 - 12 |
     | `year` | String | No | 4 digit year in `YYYY` format |
     | `total_hours` | Decimal | Yes | Total hours for the month as reported by payroll source. |
-    | `number_of_paychecks` | Integer | No | Number of times paid in the month within the 90-day reporting window. |
-    | `gross_income` | Decimal | No | Sum of incoming payment within the 90-day reporting window. |
+    | `number_of_paychecks` | Integer | No | Number of times paid in the month within the reporting window (90 or 182 days, per partner). |
+    | `gross_income` | Decimal | No | Sum of incoming payment within the reporting window (90 or 182 days, per partner). |
     | `partial_month` | Boolean | No | ‘true’ if this month represents less than a full month |
     | `partial_month_start` | Date | Yes | Start of partial month period. Will be `null` if `partial_month` is `false`. When `partial_month` is `true`, contains the start date of the partial period. |
     | `partial_month_end` | Date | Yes | End of partial month period. Will be `null` if `partial_month` is `false`. When `partial_month` is `true`, contains the end date of the partial period. |
@@ -226,12 +239,12 @@ The request body contains the income data. This payload is formatted as a JSON o
     | `year` | String | No | 4 digit year in `YYYY` format |
     | `total_hours` | Decimal | Yes | Total hours reports for the month. |
     | `gross_earnings` | Decimal | Yes | Sum of income payments for the month. |
-    | `mileage_expenses` | Array | Yes | For certain `GIG` employments only, variable depending on `GIG` type.
+    | `mileage_expenses` | Array | Yes | Always one entry per month, holding the month's total miles and the federal mileage rate for that month; `miles` is `null` when the payroll provider reports none.
     
     Verified mileage expenses can be calculated to cover costs including gas, car payments or leasing fees, car insurance, repairs, and maintenance.
      |
-    |   ├ `rate` | Decimal | Yes | IRS-defined deduction rate per mile in **cents**. |
-    |   └ `miles` | Decimal | Yes | Distance in miles. |
+    |   ├ `rate` | Decimal | Yes | The IRS standard mileage rate for that month, in **dollars** per mile, to up to three decimal places (e.g. `0.725`). Multiply by `miles` for the verified mileage expense. `null` for a month with no gig activity. |
+    |   └ `miles` | Decimal | Yes | Distance in miles. Converted from kilometers when the provider reports kilometers, and not rounded. |
 - **W2 Payment (object)**
     
     
@@ -243,8 +256,8 @@ The request body contains the income data. This payload is formatted as a JSON o
     |   └`end` | Date | Yes |  |
     | `gross_pay` | Decimal | No | If this value is not represented within pay stubs, a value of `0` will be sent. |
     | `net_pay` | Decimal | No | If this value is not represent within pay stubs, a value of `0` will be sent. |
-    | `hours_worked` | Decimal | Yes |  |
-    | `base_hours_paid` | Decimal | Yes |  |
+    | `hours_worked` | Decimal | Yes | Hours on the pay stub. |
+    | `base_hours_paid` | Decimal | Yes | Same value as `hours_worked`. Reserved for future use. |
     | `gross_pay_ytd` | Decimal | No | A `null` value will send as `0`. |
     | `gross_pay_line_items` | Array | No | Contains zero or more items listed on as part of the gross pay. |
     |   ├ `name` | String | Yes |  |
@@ -252,16 +265,16 @@ The request body contains the income data. This payload is formatted as a JSON o
     |  `deductions` | Array | No | Contains zero or more items listed on as deductions. |
     |   ├ `name` | String | Yes |  |
     |   ├ `type` | Enum | No | Must be: `PRETAX` ,`POSTTAX` , or `UNKNOWN`  |
-    |   └ `amount` | Decimal | No |  |
-    | `direct_deposit_accounts` | Array of String | No | Last 4 digits of the client's direct deposit (ACH) account numbers. Off by default; sent as an empty array unless this field is enabled for your integration. |
-    | `payout_card_accounts` | Array of String | No | Last 4 digits of the client's payout (pay) card numbers. Off by default; sent as an empty array unless this field is enabled for your integration. |
+    |   └ `amount` | Decimal | Yes | `null` when the payroll provider didn't report an amount. |
+    | `direct_deposit_accounts` | Array of String | No | Last 4 digits of the client's direct deposit (ACH) account numbers (fewer if the number is shorter). Off by default; sent as an empty array unless enabled for your integration, which enables `payout_card_accounts` too. Sent only when the payroll provider makes them available; otherwise empty even when enabled. |
+    | `payout_card_accounts` | Array of String | No | Last 4 digits of the client's payout (pay) card numbers (fewer if the number is shorter). Enabled together with `direct_deposit_accounts`, with the same default, and likewise sent only when the payroll provider makes them available. |
 - **Gig Payment (object)**
     
     
     | **Field Name** | **Type** | **Nullable?** | **Description** |
     | --- | --- | --- | --- |
-    |  `pay_date` | Date | No |  |
-    |  `amount` | Decimal | No |  |
+    |  `pay_date` | Date | Yes | `null` when the payroll provider didn't report the gig's end date. |
+    |  `amount` | Decimal | Yes | `null` when the payroll provider didn't report an amount. |
 
 ### Sample Payload
 
@@ -304,14 +317,7 @@ Content-Length: 5648
       "employer_information": {
         "employer_name": "General Hospital Systems",
         "employer_phone": "312-555-0456",
-        "employer_address": {
-          "line1": "710 N Fairbanks Ct",
-          "line2": "Floor 4",
-          "city": "Chicago",
-          "state": "IL",
-          "postal_code": "60611",
-          "country": "United States"
-        }
+        "employer_address": null
       },
       "employment_status": "EMPLOYED",
       "employment_start_date": "2025-12-29",
@@ -377,7 +383,7 @@ Content-Length: 5648
           "gross_pay": 1390.00,
           "net_pay": 978.19,
           "hours_worked": 88.0,
-          "base_hours_paid": 80.0,
+          "base_hours_paid": 88.0,
           "gross_pay_ytd": 2440.00,
           "gross_pay_line_items": [
             { "name": "Regular", "amount": 1000.00 },
@@ -388,7 +394,9 @@ Content-Length: 5648
           "deductions": [
             { "name": "Medical", "type": "PRETAX", "amount": 50.00 },
             { "name": "401k", "type": "PRETAX", "amount": 40.00 }
-          ]
+          ],
+          "direct_deposit_accounts": [],
+          "payout_card_accounts": []
         }
       ]
     },
@@ -397,16 +405,9 @@ Content-Length: 5648
       "employer_information": {
         "employer_name": "DoorDash",
         "employer_phone": null,
-        "employer_address": {
-          "line1": "303 2nd St",
-          "line2": "South Tower",
-          "city": "San Francisco",
-          "state": "CA",
-          "postal_code": "94107",
-          "country": "United States"
-        }
+        "employer_address": null
       },
-      "employment_status": "ACTIVE",
+      "employment_status": "EMPLOYED",
       "employment_start_date": "2025-05-20",
       "employment_end_date": null,
       "employee_information": {
@@ -416,24 +417,27 @@ Content-Length: 5648
         "ssn": "XXX-XX-4455"
       },
       "pay_frequency": "VARIABLE",
-      "base_compensation": null,
+      "base_compensation": {
+        "rate": null,
+        "interval": null
+      },
       "gig_monthly_summaries": [
-		    {
-		      "month": 12,
-		      "year": "2025",
-		      "total_hours": 128.50,
-		      "gross_earnings": 1336.45,
-		      "mileage_expenses": [
-		        { "rate": 70.0, "miles": 942 }
-		      ]
-		    }, 
+        {
+          "month": 12,
+          "year": "2025",
+          "total_hours": 128.50,
+          "gross_earnings": 1336.45,
+          "mileage_expenses": [
+            { "miles": 942, "rate": 0.7 }
+          ]
+        },
         {
           "month": 1,
           "year": "2026",
           "total_hours": 45.20,
           "gross_earnings": 620.75,
           "mileage_expenses": [
-            { "rate": 72.5, "miles": 310.4 }
+            { "miles": 310.4, "rate": 0.725 }
           ]
         }
       ],
@@ -449,7 +453,11 @@ Content-Length: 5648
       "w2_payments": null
     }
   ],
-  "paystub_images_included": true
+  "paystub_images_included": true,
+  "attachments": {
+    "report_filename": "CBVPilot_00012345_20260513_ConfLALDH00100001.pdf",
+    "paystubs_filename": "CBVPilot_00012345_20260513_ConfLALDH00100001_paystubs.pdf"
+  }
 }
 ```
 
@@ -500,19 +508,22 @@ VMI relies on semantic HTTP status codes to determine if the data was correctly 
 
 ### Status Codes
 
-| **HTTP Status Code** | **Definition** | **Action** |
+| **HTTP Status Code** | **Definition** | **VMI action** |
 | --- | --- | --- |
-| **200 OK** | The data was successfully received and ingested. | Mark successful. |
+| **2xx** (e.g. **200 OK**) | The data was successfully received and ingested. | Mark delivered. Any 2xx status counts as success. |
 |  |  |  |
-| **400 Bad Request** | The data in the body is malformed or fails schema validation, or the body's confirmation code doesn't match `X-VMI-Confirmation-Code`. | Send to error queue. |
-| **401 Unauthorized** | X-VMI-Signature verification failed, a required header is missing, or `X-VMI-Timestamp` is too far from the receiver's clock. | Attempt retry. |
-| **413 Payload Too Large** | Content-Length exceeds partner server size limit. | Send to error queue. |
-| **422 Unprocessable Entity** |  | Send to error queue. |
-| **429 Too Many Requests** | Rate of requests is exceeding partner server limits. | Attempt retry. |
+| **400 Bad Request** | The data in the body is malformed or fails schema validation, or the body's confirmation code doesn't match `X-VMI-Confirmation-Code`. | Don't retry. Record the delivery as failed and alert the VMI team. |
+| **401 Unauthorized** | X-VMI-Signature verification failed, a required header is missing, or `X-VMI-Timestamp` is too far from the receiver's clock. | Retry. |
+| **413 Payload Too Large** | Content-Length exceeds partner server size limit. | Don't retry. Record the delivery as failed and alert the VMI team. |
+| **422 Unprocessable Entity** | The request was understood but can't be processed. | Don't retry. Record the delivery as failed and alert the VMI team. |
+| **429 Too Many Requests** | Rate of requests is exceeding partner server limits. | Retry. |
 |  |  |  |
-| **500 Internal Error** | System error during processing. | Attempt retry. |
-| **503 Service Unavailable** | The partner server is temporarily unavailable or undergoing maintenance. | Attempt retry. |
-| **504 Gateway Timeout** | Communication error between application and partner server. | Attempt retry. |
+| **500 Internal Error** | System error during processing. | Retry. |
+| **503 Service Unavailable** | The partner server is temporarily unavailable or undergoing maintenance. | Retry. |
+| **504 Gateway Timeout** | Communication error between application and partner server. | Retry. |
+| **Anything else** | Any other status (including 3xx redirects, which VMI doesn't follow, and 404), a connection failure, or no response within 60 seconds. | Retry. |
+
+A ReportSubmission and each TransmissionComplete are delivered, and retried, independently.
 
 Partners are encouraged to use additional codes or include descriptive error messages to assist in troubleshooting. 
 
@@ -539,8 +550,12 @@ Example descriptive error message:
 
 ### Retry Logic
 
-If a non-success status code is returned, the VMI platform will:
+When a response calls for a retry, the VMI platform will:
 
-- Automatically retry delivery up to **five additional times**.
-- Conduct retries over a **10-minute window**.
-- Move the record to an **error queue** for further inspection if the final attempt fails.
+- Make up to **five attempts in total** (the first delivery and four retries), about **75 seconds apart**, so retries end roughly five minutes after the first attempt.
+- Sign each attempt afresh, with a new `X-VMI-Timestamp`.
+- Move the event to an **error queue** for the VMI team to inspect if the final attempt fails. Events can be resent from there.
+
+Responses that VMI doesn't retry (400, 413 and 422) aren't queued: VMI records the failure and alerts the VMI team.
+
+Because retries end within minutes, tell the VMI team about planned downtime longer than that, so events that reach the error queue during it can be resent afterwards.

@@ -2,15 +2,14 @@
 class IncomeReportValidator
   DATE_REGEX = /\A\d{4}-\d{2}-\d{2}\z/
   DATETIME_REGEX = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/
-  SSN_REGEX = /\AXXX-XX-\d{4}\z/
-  FULL_SSN_REGEX = /\A\d{3}-\d{2}-\d{4}\z/
   YEAR_REGEX = /\A\d{4}\z/
-  ACCOUNT_LAST_FOUR_REGEX = /\A\d{4}\z/
+  # the trailing digits of the number: four, or fewer if the number is shorter
+  ACCOUNT_LAST_FOUR_REGEX = /\A\d{1,4}\z/
 
-  EMPLOYMENT_TYPES = %w[W2 GIG].freeze
-  EMPLOYMENT_STATUSES = %w[EMPLOYED ACTIVE INACTIVE TERMINATED].freeze
+  # "" when the payroll provider returned no employment details for the account
+  EMPLOYMENT_TYPES = [ "W2", "GIG", "" ].freeze
   PAY_FREQUENCIES = %w[ANNUALLY BIWEEKLY DAILY HOURLY MONTHLY QUARTERLY SEMIMONTHLY SEMIWEEKLY VARIABLE WEEKLY].freeze
-  BASE_COMPENSATION_INTERVALS = %w[HOURLY DAILY WEEKLY BIWEEKLY SEMIMONTHLY MONTHLY ANNUAL SALARY].freeze
+  BASE_COMPENSATION_INTERVALS = %w[HOURLY WEEKLY MONTHLY ANNUAL SALARY].freeze
   DEDUCTION_TYPES = %w[PRETAX POSTTAX UNKNOWN].freeze
 
   def initialize(payload)
@@ -23,6 +22,7 @@ class IncomeReportValidator
     validate_client_information
     validate_employment_records
     validate_paystub_images_included
+    validate_attachments
     @errors
   end
 
@@ -95,6 +95,22 @@ class IncomeReportValidator
     end
   end
 
+  # --- Attachments ---
+
+  # present only when the partner has pay stub images enabled
+  def validate_attachments
+    return unless @payload.key?("attachments") && !@payload["attachments"].nil?
+
+    attachments = @payload["attachments"]
+    unless attachments.is_a?(Hash)
+      add_error("attachments", "Must be an object.")
+      return
+    end
+
+    validate_required_string(attachments, "report_filename", "attachments.report_filename")
+    validate_required_string(attachments, "paystubs_filename", "attachments.paystubs_filename")
+  end
+
   # --- Employment Records ---
 
   def validate_employment_records
@@ -120,21 +136,20 @@ class IncomeReportValidator
 
     validate_employer_information(record["employer_information"], "#{prefix}.employer_information")
 
-    if record.key?("employment_status") && !record["employment_status"].nil?
-      validate_nullable_enum(record, "employment_status", EMPLOYMENT_STATUSES, "#{prefix}.employment_status")
-    end
+    # the payroll provider's status, upper-cased (usually EMPLOYED, INACTIVE or
+    # TERMINATED), so any string is possible
+    validate_nullable_string(record, "employment_status", "#{prefix}.employment_status")
 
     validate_nullable_date(record, "employment_start_date", "#{prefix}.employment_start_date")
     validate_nullable_date(record, "employment_end_date", "#{prefix}.employment_end_date")
 
     validate_employee_information(record["employee_information"], "#{prefix}.employee_information")
 
-    # pay_frequency is nullable — some aggregators (e.g. Argyle) return null for gig workers
+    # pay_frequency is nullable — some payroll providers return null for gig workers
     validate_nullable_enum(record, "pay_frequency", PAY_FREQUENCIES, "#{prefix}.pay_frequency")
 
-    if record.key?("base_compensation") && !record["base_compensation"].nil?
-      validate_base_compensation(record["base_compensation"], "#{prefix}.base_compensation")
-    end
+    # always an object; its fields are null when unknown
+    validate_base_compensation(record["base_compensation"], "#{prefix}.base_compensation")
 
     if emp_type == "W2"
       validate_w2_monthly_summaries(record["w2_monthly_summaries"], "#{prefix}.w2_monthly_summaries")
@@ -151,7 +166,8 @@ class IncomeReportValidator
       return
     end
 
-    validate_required_string(info, "employer_name", "#{prefix}.employer_name")
+    # null when the payroll provider returned no employment details
+    validate_nullable_string(info, "employer_name", "#{prefix}.employer_name")
     validate_nullable_string(info, "employer_phone", "#{prefix}.employer_phone")
 
     if info.key?("employer_address") && !info["employer_address"].nil?
@@ -169,16 +185,14 @@ class IncomeReportValidator
     validate_nullable_string(info, "last_name", "#{prefix}.last_name")
     validate_nullable_string(info, "full_name", "#{prefix}.full_name")
 
-    if info.key?("ssn") && !info["ssn"].nil?
-      unless info["ssn"].is_a?(String) && (info["ssn"].match?(SSN_REGEX) || info["ssn"].match?(FULL_SSN_REGEX))
-        add_error("#{prefix}.ssn", "Must match format XXX-XX-1234 or 123-45-6789.")
-      end
-    end
+    # usually XXX-XX-1234 (masked) or 123-45-6789 (full), but a full SSN is the
+    # payroll provider's value as returned, so the format isn't guaranteed
+    validate_nullable_string(info, "ssn", "#{prefix}.ssn")
   end
 
   def validate_base_compensation(comp, prefix)
     unless comp.is_a?(Hash)
-      add_error(prefix, "Must be an object when present.")
+      add_error(prefix, "This field is required and must be an object.")
       return
     end
 
@@ -312,11 +326,8 @@ class IncomeReportValidator
         unless pp_obj.is_a?(Hash)
           add_error("#{p}.pay_period", "Must be an object or null.")
         else
-          # Accept both start/end (spec) and start_date/end_date (sample)
-          validate_nullable_date(pp_obj, "start", "#{p}.pay_period.start") if pp_obj.key?("start")
-          validate_nullable_date(pp_obj, "start_date", "#{p}.pay_period.start_date") if pp_obj.key?("start_date")
-          validate_nullable_date(pp_obj, "end", "#{p}.pay_period.end") if pp_obj.key?("end")
-          validate_nullable_date(pp_obj, "end_date", "#{p}.pay_period.end_date") if pp_obj.key?("end_date")
+          validate_nullable_date(pp_obj, "start", "#{p}.pay_period.start")
+          validate_nullable_date(pp_obj, "end", "#{p}.pay_period.end")
         end
       end
 
@@ -372,11 +383,13 @@ class IncomeReportValidator
       end
       validate_nullable_string(d, "name", "#{dp}.name")
       validate_required_enum(d, "type", DEDUCTION_TYPES, "#{dp}.type")
-      validate_required_decimal(d, "amount", "#{dp}.amount")
+      # null when the payroll provider didn't report an amount
+      validate_nullable_decimal(d, "amount", "#{dp}.amount")
     end
   end
 
-  # Last-4 deposit account / payout card numbers. Optional; each entry is a 4-digit string.
+  # Last-4 deposit account / payout card numbers. Optional; each entry is a string
+  # of up to 4 digits.
   def validate_account_last_four(accounts, prefix)
     return if accounts.nil?
     unless accounts.is_a?(Array)
@@ -386,7 +399,7 @@ class IncomeReportValidator
 
     accounts.each_with_index do |account, i|
       unless account.is_a?(String) && account.match?(ACCOUNT_LAST_FOUR_REGEX)
-        add_error("#{prefix}[#{i}]", "Must be a 4-digit string.")
+        add_error("#{prefix}[#{i}]", "Must be a string of 1 to 4 digits.")
       end
     end
   end
@@ -406,8 +419,9 @@ class IncomeReportValidator
         add_error(p, "Must be an object.")
         next
       end
-      validate_required_date(pay, "pay_date", "#{p}.pay_date")
-      validate_required_decimal(pay, "amount", "#{p}.amount")
+      # either may be null when the payroll provider didn't report it
+      validate_nullable_date(pay, "pay_date", "#{p}.pay_date")
+      validate_nullable_decimal(pay, "amount", "#{p}.amount")
     end
   end
 
