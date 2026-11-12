@@ -129,11 +129,11 @@ After the signature check, the server also rejects a request whose `X-VMI-Timest
 
 ## Validation
 
-A `TransmissionComplete` must have a non-empty `confirmation_code` and `transmission_method` (any string; known values are `sftp`, `encrypted_s3`, `unencrypted_s3`, `shared_email`, `json`), a `uri` key holding a string or `null`, and a `completed_at` datetime.
+A `TransmissionComplete` must have a non-empty `confirmation_code` and `transmission_method` (any string; known values are `sftp`, `s3`, `shared_email`, `json`), a `uri` key holding a string or `null`, and a `completed_at` datetime.
 
 For a ReportSubmission, the server validates the full payload structure per the spec:
 
-- **Report Metadata** — `confirmation_code`, `report_date_range` (start/end dates), `consent_timestamp_utc`, optional `filenames` map of transmission method (`sftp`, `encrypted_s3`, `unencrypted_s3`) → remote path of the companion file
+- **Report Metadata** — `confirmation_code`, `report_date_range` (start/end dates), `consent_timestamp_utc`, optional `filenames` map of transmission method (`sftp`, `s3`) → remote path of the companion file
 - **Client Information** — must be an object (fields vary by partner, and any that weren't filled in arrive as `null`); `additional_jobs_to_report`, which VMI adds for every partner, must be a boolean or `null` (`null` when the applicant wasn't asked)
 - **Employment Records** — array of W2 or GIG records, each validated for:
   - `employment_type` enum (`W2`, `GIG`)
