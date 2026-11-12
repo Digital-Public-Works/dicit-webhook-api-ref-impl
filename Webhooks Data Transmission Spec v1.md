@@ -12,6 +12,7 @@
 | 6/12/2026 | Add optional top-level paystub_images_included flag indicating whether the companion pay stub images file contains any pay stub images |
 | 10/15/2026 | Add webhook contract version 2: top-level `event_type`, new `TransmissionComplete` event, and authentication by `X-VMI-Signature` only (`X-VMI-API-Key` deprecated) |
 | 10/21/2026 | Clarify that `filenames` values (and `TransmissionComplete` `uri`) are remote paths and document the `VMI_` prefix; state that `X-VMI-Confirmation-Code` equals the body's confirmation code; explain how contract versions relate to the API version; reject stale timestamps with 401; document `client_information.additional_jobs_to_report` (nullable boolean) and that unfilled `client_information` fields are sent as `null` |
+| 11/12/2026 | Replace the `encrypted_s3` and `unencrypted_s3` transmission methods with a single `s3` method, used as a `filenames` key and as a `TransmissionComplete` `transmission_method`; whether the S3 file is GPG-encrypted is shown by its extension (`.tar.gz.gpg` vs `.tar.gz`) |
 
 # Introduction
 
@@ -143,8 +144,7 @@ The request body contains the income data. This payload is formatted as a JSON o
     | **Field Name** | **Type** | **Nullable?** | **Description** |
     | --- | --- | --- | --- |
     | `sftp` | String | Yes | SFTP path of the PDF, e.g. `inbox/VMI_00012345_20260513_ConfABC123.pdf`. Present only when SFTP transmission is configured. |
-    | `encrypted_s3` | String | Yes | S3 object key of the encrypted tarball, e.g. `VMI_00012345_20260513_ConfABC123.tar.gz.gpg`. Present only when encrypted-S3 transmission is configured. |
-    | `unencrypted_s3` | String | Yes | S3 object key of the unencrypted tarball, e.g. `VMI_00012345_20260513_ConfABC123.tar.gz`. Present only when unencrypted-S3 transmission is configured. |
+    | `s3` | String | Yes | S3 object key of the tarball, e.g. `VMI_00012345_20260513_ConfABC123.tar.gz.gpg`. The tarball is GPG-encrypted (extension `.tar.gz.gpg`) when the partner has supplied a public key, and unencrypted (extension `.tar.gz`) otherwise. Present only when S3 transmission is configured. |
 
     Value format: `[<directory>/]<prefix>_<8-char padded partner_identifier>_<YYYYMMDD in agency tz>_Conf<confirmation_code>.<ext>`. `<prefix>` is `VMI` (`CBVPilot` for some early partners, as in the sample payload). The directory is present only when one is configured for that method. The filename portion is ≤ 100 characters; the directory is not counted. The key `webhook` will never appear (the dict points at companion files, not at this payload itself); methods that produce no file (e.g. `shared_email`, `json`) are also omitted. Partners should treat unknown keys as a no-op (per the flexible-parser guidance above).
 
@@ -282,8 +282,7 @@ Content-Length: 5648
     "confirmation_code": "LALDH00100001",
     "filenames": {
       "sftp": "CBVPilot_00012345_20260513_ConfLALDH00100001.pdf",
-      "encrypted_s3": "CBVPilot_00012345_20260513_ConfLALDH00100001.tar.gz.gpg",
-      "unencrypted_s3": "CBVPilot_00012345_20260513_ConfLALDH00100001.tar.gz"
+      "s3": "CBVPilot_00012345_20260513_ConfLALDH00100001.tar.gz.gpg"
     },
     "report_date_range": {
       "start_date": "2025-11-01",
@@ -463,7 +462,7 @@ When VMI delivers a submission by other transmission methods as well as this web
 | --- | --- | --- | --- |
 | `event_type` | Enum | No | `TransmissionComplete` |
 | `confirmation_code` | String | No | Matches `report_metadata.confirmation_code` in the ReportSubmission for the same submission, and the `X-VMI-Confirmation-Code` header. |
-| `transmission_method` | String | No | The method that finished delivering: `sftp`, `encrypted_s3`, `unencrypted_s3`, `shared_email` or `json`. Receivers should accept values they don't recognize. |
+| `transmission_method` | String | No | The method that finished delivering: `sftp`, `s3`, `shared_email` or `json`. Receivers should accept values they don't recognize. |
 | `uri` | String | Yes | The same value as `report_metadata.filenames[transmission_method]` in the ReportSubmission: the SFTP path or S3 object key of the delivered file. Always present; `null` for methods that don't produce a file (`shared_email`, `json`). |
 | `completed_at` | DateTime | No | When the delivery finished. |
 

@@ -205,7 +205,7 @@ class IdempotencyTest < Minitest::Test
 
   def test_transmission_completes_are_keyed_by_method
     post_event(transmission_complete(transmission_method: "sftp"))
-    post_event(transmission_complete(transmission_method: "encrypted_s3"))
+    post_event(transmission_complete(transmission_method: "s3"))
     assert_equal "success", json_response["status"]
   end
 
